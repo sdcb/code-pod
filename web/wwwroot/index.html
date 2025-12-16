@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docker Shell Host - Container Management</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="css/app.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="px-3 mb-3">
+            <h6 class="mb-0 text-white-50"><img src="favicon.svg" style="width: 20px; height: 20px; margin-right: 6px; vertical-align: text-bottom;">Docker Shell Host</h6>
+        </div>
+        <div class="connection-status disconnected" id="connectionStatus">
+            <span class="dot"></span>
+            <span class="status-text">Connecting...</span>
+        </div>
+        <ul class="nav flex-column mt-3">
+            <li class="nav-item">
+                <a class="nav-link active" href="#" data-page="dashboard">
+                    <i class="bi bi-speedometer2"></i> Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-page="sessions">
+                    <i class="bi bi-terminal"></i> Sessions
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-page="containers">
+                    <i class="bi bi-boxes"></i> Containers
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Page Header -->
+        <div class="page-header mb-3">
+            <h4 class="mb-0">Docker Shell Host</h4>
+            <small class="text-muted">Container Management Platform</small>
+        </div>
+
+        <!-- Dashboard -->
+        <section id="dashboardSection" class="page-section active">
+            <h5 class="mb-3">System Dashboard</h5>
+            
+            <!-- Status Cards -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-3">
+                    <div class="status-card">
+                        <div class="d-flex align-items-center">
+                            <div class="icon bg-success bg-opacity-10 text-success me-3">
+                                <i class="bi bi-box-seam"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small">Available</div>
+                                <div class="number"><span id="availableContainers">-</span>/<span id="maxContainers">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="status-card">
+                        <div class="d-flex align-items-center">
+                            <div class="icon bg-primary bg-opacity-10 text-primary me-3">
+                                <i class="bi bi-terminal"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small">Active Sessions</div>
+                                <div class="number" id="activeSessions">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="status-card">
+                        <div class="d-flex align-items-center">
+                            <div class="icon bg-warning bg-opacity-10 text-warning me-3">
+                                <i class="bi bi-hourglass-split"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small">Warming</div>
+                                <div class="number" id="warmingContainers">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="status-card">
+                        <div class="d-flex align-items-center">
+                            <div class="icon bg-danger bg-opacity-10 text-danger me-3">
+                                <i class="bi bi-trash"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small">Destroying</div>
+                                <div class="number" id="destroyingContainers">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Container List -->
+            <div class="card card-custom">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-boxes me-2"></i>Container Status</span>
+                    <button class="btn btn-sm btn-primary" onclick="createContainer()">
+                        <i class="bi bi-plus-lg"></i> New Container
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-custom table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Container ID</th>
+                                    <th>Status</th>
+                                    <th>Docker Status</th>
+                                    <th>Session ID</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="containersTableBody">
+                                <tr><td colspan="6" class="text-center text-muted py-4">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sessions Management -->
+        <section id="sessionsSection" class="page-section">
+            <h4 class="mb-4">Session Management</h4>
+            
+            <div class="row">
+                <div class="col-md-4">
+                    <!-- Session List -->
+                    <div class="card card-custom mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-terminal me-2"></i>Sessions</span>
+                            <button class="btn btn-sm btn-primary" onclick="createSession()">
+                                <i class="bi bi-plus-lg"></i> New
+                            </button>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="list-group list-group-flush" id="sessionsList">
+                                <div class="text-center text-muted py-4">No sessions</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <!-- Session Details -->
+                    <div class="card card-custom" id="sessionDetailCard" style="display: none;">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-info-circle me-2"></i>Session Details</span>
+                            <button class="btn btn-sm btn-danger" onclick="destroyCurrentSession()">
+                                <i class="bi bi-trash"></i> Destroy
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <!-- Session Info -->
+                            <div class="row mb-3">
+                                <div class="col-3">
+                                    <small class="text-muted">Session ID</small>
+                                    <div id="sessionDetailId" class="text-truncate">-</div>
+                                </div>
+                                <div class="col-3">
+                                    <small class="text-muted">Status</small>
+                                    <div id="sessionDetailStatus">-</div>
+                                </div>
+                                <div class="col-3">
+                                    <small class="text-muted">Container ID</small>
+                                    <div id="sessionDetailContainerId">-</div>
+                                </div>
+                                <div class="col-3">
+                                    <small class="text-muted">Commands</small>
+                                    <div id="sessionDetailCommandCount">-</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Command Execution -->
+                            <hr>
+                            <h6><i class="bi bi-code-slash me-2"></i>Execute Command</h6>
+                            <div class="mb-3">
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="commandInput" 
+                                           placeholder="Enter shell command..." 
+                                           onkeypress="if(event.key==='Enter')executeCommand()">
+                                    <button class="btn btn-primary" onclick="executeCommand()">
+                                        <i class="bi bi-play-fill"></i> Run
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="terminal-output" id="commandOutput">
+                                <span class="text-muted">Output will appear here...</span>
+                            </div>
+                            
+                            <!-- File Browser -->
+                            <hr>
+                            <h6><i class="bi bi-folder me-2"></i>File Management</h6>
+                            
+                            <!-- Upload Zone -->
+                            <div class="upload-zone mb-3" id="uploadZone">
+                                <i class="bi bi-cloud-upload"></i>
+                                <p class="mb-0 mt-2">Drag and drop files here or click to upload</p>
+                                <small class="text-muted">Multiple files supported</small>
+                            </div>
+                            <input type="file" id="fileInput" multiple style="display: none;">
+                            
+                            <!-- Upload Progress -->
+                            <div class="upload-progress" id="uploadProgress" style="display: none;">
+                                <small id="uploadProgressText">Uploading...</small>
+                                <div class="progress">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- File Toolbar -->
+                            <div class="file-toolbar">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="navigateUp()" title="Parent directory">
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <input type="text" class="form-control form-control-sm" id="currentPath" value="/app" 
+                                       onkeypress="if(event.key==='Enter')listDirectory()" style="max-width: 300px;">
+                                <button class="btn btn-sm btn-outline-primary" onclick="listDirectory()" title="Refresh">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-success" onclick="createNewFile()" title="New file">
+                                    <i class="bi bi-file-plus"></i>
+                                </button>
+                            </div>
+                            
+                            <!-- File List -->
+                            <div class="file-browser" id="fileBrowser">
+                                <div class="text-center text-muted py-3">Click refresh to load file list</div>
+                            </div>
+                            
+                            <!-- File Preview -->
+                            <div id="filePreviewSection" style="display: none;">
+                                <hr>
+                                <h6><i class="bi bi-file-text me-2"></i>File Preview: <span id="previewFileName"></span></h6>
+                                <div class="file-preview" id="filePreviewContent"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="noSessionSelected" class="text-center text-muted py-5">
+                        <i class="bi bi-arrow-left-circle display-4 d-block mb-3"></i>
+                        Please select or create a session from the left panel
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Containers Management -->
+        <section id="containersSection" class="page-section">
+            <h4 class="mb-4">Container Management</h4>
+            
+            <div class="card card-custom">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-boxes me-2"></i>All Containers</span>
+                    <div>
+                        <button class="btn btn-sm btn-outline-danger me-2" onclick="deleteAllContainers()">
+                            <i class="bi bi-trash"></i> Delete All
+                        </button>
+                        <button class="btn btn-sm btn-primary" onclick="createContainer()">
+                            <i class="bi bi-plus-lg"></i> New Container
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-custom table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Container ID</th>
+                                    <th>Status</th>
+                                    <th>Docker Status</th>
+                                    <th>Session ID</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="allContainersTableBody">
+                                <tr><td colspan="6" class="text-center text-muted py-4">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="toast" class="toast" role="alert">
+            <div class="toast-header">
+                <i class="bi bi-info-circle me-2" id="toastIcon"></i>
+                <strong class="me-auto" id="toastTitle">Notification</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="toastBody"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

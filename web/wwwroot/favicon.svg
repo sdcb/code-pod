@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="termGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#334155"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- 终端窗口 -->
+  <rect x="2" y="2" width="60" height="60" rx="8" ry="8" fill="url(#termGrad)" stroke="#475569" stroke-width="2"/>
+  
+  <!-- 终端标题栏 -->
+  <rect x="2" y="2" width="60" height="14" rx="8" ry="8" fill="#475569"/>
+  <rect x="2" y="10" width="60" height="6" fill="#475569"/>
+  
+  <!-- 窗口按钮 -->
+  <circle cx="12" cy="9" r="3" fill="#ef4444"/>
+  <circle cx="22" cy="9" r="3" fill="#fbbf24"/>
+  <circle cx="32" cy="9" r="3" fill="#34d399"/>
+  
+  <!-- 命令提示符 > -->
+  <polygon points="10,28 20,35 10,42" fill="#06b6d4"/>
+  
+  <!-- 光标 -->
+  <rect x="26" y="30" width="20" height="3" rx="1" fill="#06b6d4">
+    <animate attributeName="opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+  
+  <!-- 第二行命令输出 -->
+  <rect x="10" y="48" width="32" height="3" rx="1" fill="#94a3b8"/>
+</svg>
