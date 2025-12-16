@@ -1,3 +1,5 @@
 /web/bin/**
 /web/obj/**
 /web/logs/**
+/.vs/**
+**.csproj.user

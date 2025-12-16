@@ -143,19 +143,6 @@ event: exit
 data: {"exitCode":0,"executionTimeMs":1234}
 ```
 
-**JavaScript 使用示例：**
-```javascript
-const abortController = Api.executeCommandStream(sessionId, command, {
-    onStdout: (data) => console.log('stdout:', data),
-    onStderr: (data) => console.error('stderr:', data),
-    onExit: (exitCode, timeMs) => console.log(`Done: ${exitCode} in ${timeMs}ms`),
-    onError: (error) => console.error('Error:', error)
-}, 60);
-
-// 取消执行
-abortController.abort();
-```
-
 ### 文件 API (`/api/sessions/{sessionId}/files`)
 
 | 方法 | 路径 | 描述 |
@@ -172,17 +159,6 @@ abortController.abort();
 ```bash
 curl -X POST "http://localhost:5099/api/sessions/{sessionId}/files/upload?targetPath=/app" \
   -F "file=@hello.cs"
-```
-
-C# 示例：
-```csharp
-using var formContent = new MultipartFormDataContent();
-var fileBytes = File.ReadAllBytes("hello.cs");
-var fileStreamContent = new ByteArrayContent(fileBytes);
-fileStreamContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-formContent.Add(fileStreamContent, "file", "hello.cs");
-
-await client.PostAsync($"/api/sessions/{sessionId}/files/upload?targetPath=/app", formContent);
 ```
 
 ## 异常处理
@@ -228,30 +204,6 @@ await client.PostAsync($"/api/sessions/{sessionId}/files/upload?targetPath=/app"
   }
 }
 ```
-
-## 常见问题
-
-### Docker 连接失败
-
-错误信息：`Unable to connect to Docker service. Please ensure Docker Desktop is running.`
-
-解决方案：
-1. 确保 Docker Desktop 已启动
-2. 检查 Docker Engine 是否运行：`docker ps`
-3. 检查 Docker 管道是否可访问
-
-### 容器不存在
-
-错误信息：`Container xxx not found or has been deleted`
-
-可能原因：
-- 容器被手动删除
-- 会话超时导致容器被清理
-- Docker Desktop 重启导致容器丢失
-
-解决方案：
-- 重新创建会话
-- 检查会话是否超时
 
 ## 代码规范
 
