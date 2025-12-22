@@ -9,11 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 // 配置
 builder.Services.Configure<DockerPoolConfig>(builder.Configuration.GetSection("DockerPool"));
 
-// 服务注册
-builder.Services.AddSingleton<IDockerClientFactory, DockerClientFactory>();
-builder.Services.AddSingleton<IDockerService, DockerService>();
-builder.Services.AddSingleton<IDockerPoolService, DockerPoolService>();
-builder.Services.AddSingleton<ISessionService, SessionService>();
+// SDK 服务注册（替代原有的独立服务）
+builder.Services.AddCodePodSdk(builder.Configuration);
 
 // 后台服务
 builder.Services.AddHostedService<SessionCleanupService>();

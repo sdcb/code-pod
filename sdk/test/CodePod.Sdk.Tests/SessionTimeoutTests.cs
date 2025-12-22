@@ -1,0 +1,138 @@
+using Xunit;
+
+namespace CodePod.Sdk.Tests;
+
+/// <summary>
+/// 会话超时测试 - 对应 test/SessionTimeoutTest.cs
+/// </summary>
+public class SessionTimeoutTests : TestBase
+{
+    public override async Task InitializeAsync()
+    {
+        await base.InitializeAsync();
+        // 为超时测试使用较短的超时时间
+        Config.SessionTimeoutSeconds = 60;
+    }
+
+    [Fact]
+    public async Task CommandExecution_ExtendsTimeout()
+    {
+        // Arrange
+        var session = await Client.CreateSessionAsync("命令延时测试", 10);
+        await WaitForSessionReadyAsync(session.SessionId);
+        var initialLastActivity = session.LastActivityAt;
+
+        // Wait a bit
+        await Task.Delay(1000);
+
+        // Act - 执行命令
+        await Client.ExecuteCommandAsync(session.SessionId, "echo 'hello'");
+
+        // Assert
+        var updatedSession = await Client.GetSessionAsync(session.SessionId);
+        Assert.True(updatedSession.LastActivityAt > initialLastActivity);
+    }
+
+    [Fact]
+    public async Task FileUpload_ExtendsTimeout()
+    {
+        // Arrange
+        var session = await Client.CreateSessionAsync("上传延时测试", 10);
+        await WaitForSessionReadyAsync(session.SessionId);
+        var initialLastActivity = session.LastActivityAt;
+
+        await Task.Delay(1000);
+
+        // Act
+        await Client.UploadFileAsync(session.SessionId, "/app/timeout-test.txt", "Hello, World!"u8.ToArray());
+
+        // Assert
+        var updatedSession = await Client.GetSessionAsync(session.SessionId);
+        Assert.True(updatedSession.LastActivityAt > initialLastActivity);
+    }
+
+    [Fact]
+    public async Task ListDirectory_ExtendsTimeout()
+    {
+        // Arrange
+        var session = await Client.CreateSessionAsync("列目录延时测试", 10);
+        await WaitForSessionReadyAsync(session.SessionId);
+        var initialLastActivity = session.LastActivityAt;
+
+        await Task.Delay(1000);
+
+        // Act
+        await Client.ListDirectoryAsync(session.SessionId, "/app");
+
+        // Assert
+        var updatedSession = await Client.GetSessionAsync(session.SessionId);
+        Assert.True(updatedSession.LastActivityAt > initialLastActivity);
+    }
+
+    [Fact]
+    public async Task FileDownload_ExtendsTimeout()
+    {
+        // Arrange
+        var session = await Client.CreateSessionAsync("下载延时测试", 10);
+        await WaitForSessionReadyAsync(session.SessionId);
+        
+        // 先上传一个文件
+        await Client.UploadFileAsync(session.SessionId, "/app/download-timeout.txt", "test content"u8.ToArray());
+        
+        var initialLastActivity = (await Client.GetSessionAsync(session.SessionId)).LastActivityAt;
+        await Task.Delay(1000);
+
+        // Act
+        await Client.DownloadFileAsync(session.SessionId, "/app/download-timeout.txt");
+
+        // Assert
+        var updatedSession = await Client.GetSessionAsync(session.SessionId);
+        Assert.True(updatedSession.LastActivityAt > initialLastActivity);
+    }
+
+    [Fact]
+    public async Task SessionTimeout_DestroysSessionAndContainer()
+    {
+        // 使用非常短的超时来测试
+        var shortTimeoutConfig = new Configuration.CodePodConfig
+        {
+            Image = Config.Image,
+            PrewarmCount = 1,
+            MaxContainers = 5,
+            SessionTimeoutSeconds = 5, // 5秒超时
+            WorkDir = "/app",
+            LabelPrefix = "codepod-timeout-test"
+        };
+
+        using var shortTimeoutClient = new CodePodClientBuilder()
+            .WithConfig(shortTimeoutConfig)
+            .WithLogging(LoggerFactory)
+            .Build();
+
+        await shortTimeoutClient.InitializeAsync();
+
+        try
+        {
+            // Arrange
+            var session = await shortTimeoutClient.CreateSessionAsync("超时销毁测试", 2);
+            await Task.Delay(1000); // 等待容器分配
+            
+            var containerId = session.ContainerId;
+            
+            // 等待超时
+            await Task.Delay(4000);
+
+            // Act - 触发清理
+            await shortTimeoutClient.CleanupExpiredSessionsAsync();
+            await Task.Delay(1000); // 等待清理完成
+
+            // Assert
+            var sessions = await shortTimeoutClient.GetAllSessionsAsync();
+            Assert.DoesNotContain(sessions, s => s.SessionId == session.SessionId);
+        }
+        finally
+        {
+            await shortTimeoutClient.DeleteAllContainersAsync();
+        }
+    }
+}

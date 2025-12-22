@@ -3,3 +3,8 @@
 /web/logs/**
 /.vs/**
 **.csproj.user
+sdk/src/CodePod.Sdk/obj/**
+sdk/src/CodePod.Sdk/bin/**
+sdk/test/CodePod.Sdk.Tests/obj/**
+sdk/test/CodePod.Sdk.Tests/bin/**
+web/.app.pid
