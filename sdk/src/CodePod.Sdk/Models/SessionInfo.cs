@@ -22,6 +22,32 @@ public enum SessionStatus
 }
 
 /// <summary>
+/// 会话创建选项
+/// </summary>
+public class SessionOptions
+{
+    /// <summary>
+    /// 会话名称
+    /// </summary>
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// 超时时间（秒）
+    /// </summary>
+    public int? TimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// 资源限制（不能超过系统配置的最大值）
+    /// </summary>
+    public ResourceLimits? ResourceLimits { get; set; }
+
+    /// <summary>
+    /// 网络模式
+    /// </summary>
+    public NetworkMode? NetworkMode { get; set; }
+}
+
+/// <summary>
 /// 会话信息
 /// </summary>
 public class SessionInfo
@@ -75,4 +101,14 @@ public class SessionInfo
     /// 会话超时时间（秒），null 表示使用系统默认值
     /// </summary>
     public int? TimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// 资源限制
+    /// </summary>
+    public ResourceLimits? ResourceLimits { get; set; }
+
+    /// <summary>
+    /// 网络模式
+    /// </summary>
+    public NetworkMode NetworkMode { get; set; }
 }

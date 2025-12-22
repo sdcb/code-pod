@@ -24,9 +24,14 @@ public interface IDockerService : IDisposable
     Task EnsureImageAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 创建并启动容器
+    /// 创建并启动容器（使用默认资源限制和网络模式）
     /// </summary>
     Task<ContainerInfo> CreateContainerAsync(string? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 创建并启动容器（指定资源限制和网络模式）
+    /// </summary>
+    Task<ContainerInfo> CreateContainerAsync(string? sessionId, bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取所有受管理的容器
@@ -49,14 +54,24 @@ public interface IDockerService : IDisposable
     Task DeleteAllManagedContainersAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 执行命令
+    /// 执行 shell 命令
     /// </summary>
     Task<CommandResult> ExecuteCommandAsync(string containerId, string command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 流式执行命令
+    /// 执行命令数组（直接执行，不经过 shell 包装）
+    /// </summary>
+    Task<CommandResult> ExecuteCommandAsync(string containerId, string[] command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 流式执行 shell 命令
     /// </summary>
     IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(string containerId, string command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 流式执行命令数组（直接执行，不经过 shell 包装）
+    /// </summary>
+    IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(string containerId, string[] command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 上传文件到容器
@@ -77,6 +92,11 @@ public interface IDockerService : IDisposable
     /// 更新容器的会话标签
     /// </summary>
     Task AssignSessionToContainerAsync(string containerId, string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 获取容器使用量统计
+    /// </summary>
+    Task<SessionUsage?> GetContainerStatsAsync(string containerId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -87,6 +107,7 @@ public class DockerService : IDockerService
     private readonly DockerClient _client;
     private readonly CodePodConfig _config;
     private readonly ILogger<DockerService>? _logger;
+
 
     public DockerService(IDockerClientFactory clientFactory, CodePodConfig config, ILogger<DockerService>? logger = null)
     {
@@ -123,16 +144,33 @@ public class DockerService : IDockerService
         });
     }
 
-    public async Task<ContainerInfo> CreateContainerAsync(string? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default)
+    public Task<ContainerInfo> CreateContainerAsync(string? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default)
+    {
+        return CreateContainerAsync(sessionId, isWarm, null, null, cancellationToken);
+    }
+
+    public async Task<ContainerInfo> CreateContainerAsync(string? sessionId, bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default)
     {
         return await WrapDockerOperationAsync("CreateContainer", async () =>
         {
+            // 使用指定的资源限制或默认值
+            var limits = resourceLimits ?? _config.DefaultResourceLimits;
+            // 验证不超过最大限制
+            limits.Validate(_config.MaxResourceLimits);
+
+            // 使用指定的网络模式或默认值
+            var network = networkMode ?? _config.DefaultNetworkMode;
+
             var containerName = $"{_config.LabelPrefix}-{Guid.NewGuid():N}";
             var labels = new Dictionary<string, string>
             {
                 [$"{_config.LabelPrefix}.managed"] = "true",
                 [$"{_config.LabelPrefix}.created"] = DateTimeOffset.UtcNow.ToString("o"),
-                [$"{_config.LabelPrefix}.warm"] = isWarm.ToString().ToLower()
+                [$"{_config.LabelPrefix}.warm"] = isWarm.ToString().ToLower(),
+                [$"{_config.LabelPrefix}.memory"] = limits.MemoryBytes.ToString(),
+                [$"{_config.LabelPrefix}.cpu"] = limits.CpuCores.ToString("F2"),
+                [$"{_config.LabelPrefix}.pids"] = limits.MaxProcesses.ToString(),
+                [$"{_config.LabelPrefix}.network"] = network.ToString().ToLower()
             };
 
             if (!string.IsNullOrEmpty(sessionId))
@@ -152,18 +190,21 @@ public class DockerService : IDockerService
                 Labels = labels,
                 HostConfig = new HostConfig
                 {
-                    Memory = 512 * 1024 * 1024, // 512MB
-                    CPUPercent = 50,
-                    NetworkMode = "bridge"
+                    Memory = limits.MemoryBytes,
+                    NanoCPUs = (long)(limits.CpuCores * 1_000_000_000), // 1e9 = 1 CPU
+                    PidsLimit = limits.MaxProcesses,
+                    NetworkMode = network.ToDockerNetworkMode()
                 }
             }, cancellationToken);
 
             await _client.Containers.StartContainerAsync(response.ID, new ContainerStartParameters(), cancellationToken);
 
-            _logger?.LogInformation("Created and started container {ContainerId} (name: {Name}, warm: {IsWarm})", response.ID[..12], containerName, isWarm);
+            _logger?.LogInformation("Created and started container {ContainerId} (name: {Name}, warm: {IsWarm}, memory: {Memory}MB, cpu: {Cpu}, pids: {Pids}, network: {Network})",
+                response.ID[..12], containerName, isWarm,
+                limits.MemoryBytes / 1024 / 1024, limits.CpuCores, limits.MaxProcesses, network);
 
-            // 创建工作目录
-            await ExecuteCommandAsync(response.ID, $"mkdir -p {_config.WorkDir}", "/", 10, cancellationToken);
+            // 创建工作目录和 artifacts 目录
+            await ExecuteCommandAsync(response.ID, $"mkdir -p {_config.WorkDir} {_config.WorkDir}/{_config.ArtifactsDir}", "/", 10, cancellationToken);
 
             return new ContainerInfo
             {
@@ -293,7 +334,13 @@ public class DockerService : IDockerService
         _logger?.LogInformation("Deleted {Count} managed containers", containers.Count);
     }
 
-    public async Task<CommandResult> ExecuteCommandAsync(string containerId, string command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default)
+    public Task<CommandResult> ExecuteCommandAsync(string containerId, string command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default)
+    {
+        // 包装为 shell 命令
+        return ExecuteCommandAsync(containerId, ["/bin/bash", "-lc", command], workingDirectory, timeoutSeconds, cancellationToken);
+    }
+
+    public async Task<CommandResult> ExecuteCommandAsync(string containerId, string[] command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default)
     {
         return await WrapDockerOperationAsync("ExecuteCommand", async () =>
         {
@@ -304,7 +351,7 @@ public class DockerService : IDockerService
                 AttachStdout = true,
                 AttachStderr = true,
                 WorkingDir = workingDirectory,
-                Cmd = ["/bin/bash", "-lc", command]
+                Cmd = command
             }, cancellationToken);
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -317,19 +364,35 @@ public class DockerService : IDockerService
 
             sw.Stop();
 
+            // 应用输出截断
+            var (truncatedStdout, stdoutTruncated) = TruncateOutput(stdout);
+            var (truncatedStderr, stderrTruncated) = TruncateOutput(stderr);
+
             return new CommandResult
             {
-                Stdout = stdout,
-                Stderr = stderr,
+                Stdout = truncatedStdout,
+                Stderr = truncatedStderr,
                 ExitCode = inspect.ExitCode,
-                ExecutionTimeMs = sw.ElapsedMilliseconds
+                ExecutionTimeMs = sw.ElapsedMilliseconds,
+                IsTruncated = stdoutTruncated || stderrTruncated
             };
         }, containerId);
     }
 
-    public async IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(
+    public IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(
         string containerId,
         string command,
+        string workingDirectory,
+        int timeoutSeconds,
+        CancellationToken cancellationToken = default)
+    {
+        // 包装为 shell 命令
+        return ExecuteCommandStreamAsync(containerId, ["/bin/bash", "-lc", command], workingDirectory, timeoutSeconds, cancellationToken);
+    }
+
+    public async IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(
+        string containerId,
+        string[] command,
         string workingDirectory,
         int timeoutSeconds,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -348,7 +411,7 @@ public class DockerService : IDockerService
             AttachStdout = true,
             AttachStderr = true,
             WorkingDir = workingDirectory,
-            Cmd = ["/bin/bash", "-lc", command]
+            Cmd = command
         }, cancellationToken);
 
         execId = execCreate.ID;
@@ -514,6 +577,109 @@ public class DockerService : IDockerService
             var marker = $"Session: {sessionId}\nAssigned: {DateTimeOffset.UtcNow:o}";
             await UploadFileAsync(containerId, "/app/.session", Encoding.UTF8.GetBytes(marker), cancellationToken);
         }, containerId);
+    }
+
+    public async Task<SessionUsage?> GetContainerStatsAsync(string containerId, CancellationToken cancellationToken = default)
+    {
+        return await WrapDockerOperationAsync("GetContainerStats", async () =>
+        {
+            try
+            {
+                ContainerStatsResponse? statsData = null;
+                
+                // 使用同步 Action 来捕获数据
+                var progress = new Progress<ContainerStatsResponse>(stats =>
+                {
+                    statsData = stats;
+                });
+
+                // 使用新的 API 签名获取容器统计信息（一次性读取）
+                await _client.Containers.GetContainerStatsAsync(
+                    containerId,
+                    new ContainerStatsParameters { Stream = false },
+                    progress,
+                    cancellationToken);
+
+                // 等待一小段时间确保回调已执行
+                await Task.Delay(50, cancellationToken);
+
+                if (statsData == null)
+                {
+                    _logger?.LogWarning("No stats data received for container {ContainerId}", containerId[..12]);
+                    return null;
+                }
+
+                var usage = new SessionUsage
+                {
+                    ContainerId = containerId
+                };
+
+                // CPU 使用
+                if (statsData.CPUStats?.CPUUsage != null)
+                {
+                    usage.CpuUsageNanos = (long)statsData.CPUStats.CPUUsage.TotalUsage;
+                }
+
+                // 内存使用
+                if (statsData.MemoryStats != null)
+                {
+                    usage.MemoryUsageBytes = (long)statsData.MemoryStats.Usage;
+                    usage.PeakMemoryBytes = (long)statsData.MemoryStats.MaxUsage;
+                }
+
+                // 网络 IO
+                if (statsData.Networks != null)
+                {
+                    foreach (var network in statsData.Networks.Values)
+                    {
+                        usage.NetworkRxBytes += (long)network.RxBytes;
+                        usage.NetworkTxBytes += (long)network.TxBytes;
+                    }
+                }
+
+                return usage;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to get container stats for {ContainerId}", containerId[..12]);
+                return null;
+            }
+        }, containerId);
+    }
+
+    private (string output, bool truncated) TruncateOutput(string output)
+    {
+        var options = _config.OutputOptions;
+        var bytes = Encoding.UTF8.GetBytes(output);
+
+        if (bytes.Length <= options.MaxOutputBytes)
+        {
+            return (output, false);
+        }
+
+        var halfSize = options.MaxOutputBytes / 2;
+        var omittedBytes = bytes.Length - options.MaxOutputBytes;
+
+        return options.Strategy switch
+        {
+            TruncationStrategy.Head => (
+                Encoding.UTF8.GetString(bytes, 0, options.MaxOutputBytes) +
+                string.Format(options.TruncationMessage, omittedBytes),
+                true),
+
+            TruncationStrategy.Tail => (
+                string.Format(options.TruncationMessage, omittedBytes) +
+                Encoding.UTF8.GetString(bytes, bytes.Length - options.MaxOutputBytes, options.MaxOutputBytes),
+                true),
+
+            TruncationStrategy.HeadAndTail => (
+                Encoding.UTF8.GetString(bytes, 0, halfSize) +
+                string.Format(options.TruncationMessage, omittedBytes) +
+                Encoding.UTF8.GetString(bytes, bytes.Length - halfSize, halfSize),
+                true),
+
+            _ => (output, false)
+        };
     }
 
     private static async Task<(string stdout, string stderr)> ReadOutputAsync(MultiplexedStream stream, CancellationToken cancellationToken)

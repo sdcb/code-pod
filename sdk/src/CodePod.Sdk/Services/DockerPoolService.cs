@@ -16,9 +16,14 @@ public interface IDockerPoolService
     Task EnsurePrewarmAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 获取一个可用容器分配给会话
+    /// 获取一个可用容器分配给会话（使用默认资源限制）
     /// </summary>
     Task<ContainerInfo?> AcquireContainerAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 获取一个可用容器分配给会话（指定资源限制和网络模式）
+    /// </summary>
+    Task<ContainerInfo?> AcquireContainerAsync(string sessionId, ResourceLimits resourceLimits, NetworkMode networkMode, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 释放容器（销毁）
@@ -116,26 +121,40 @@ public class DockerPoolService : IDockerPoolService
         NotifyStatusChanged();
     }
 
-    public async Task<ContainerInfo?> AcquireContainerAsync(string sessionId, CancellationToken cancellationToken = default)
+    public Task<ContainerInfo?> AcquireContainerAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        // 使用默认资源限制和网络模式（预热容器使用默认配置）
+        return AcquireContainerAsync(sessionId, _config.DefaultResourceLimits, _config.DefaultNetworkMode, cancellationToken);
+    }
+
+    public async Task<ContainerInfo?> AcquireContainerAsync(string sessionId, ResourceLimits resourceLimits, NetworkMode networkMode, CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            // 查找空闲容器
-            var idleContainer = await _containerStorage.GetFirstIdleAsync(cancellationToken);
-            if (idleContainer != null)
+            // 查找空闲容器（仅当使用默认配置时才能复用预热容器）
+            var isDefaultConfig = resourceLimits.MemoryBytes == _config.DefaultResourceLimits.MemoryBytes &&
+                                  Math.Abs(resourceLimits.CpuCores - _config.DefaultResourceLimits.CpuCores) < 0.01 &&
+                                  resourceLimits.MaxProcesses == _config.DefaultResourceLimits.MaxProcesses &&
+                                  networkMode == _config.DefaultNetworkMode;
+
+            if (isDefaultConfig)
             {
-                idleContainer.Status = ContainerStatus.Busy;
-                idleContainer.SessionId = sessionId;
-                await _containerStorage.SaveAsync(idleContainer, cancellationToken);
-                await _dockerService.AssignSessionToContainerAsync(idleContainer.ContainerId, sessionId, cancellationToken);
-                _logger?.LogInformation("Allocated container {ContainerId} to session {SessionId}", idleContainer.ShortId, sessionId);
-                NotifyStatusChanged();
+                var idleContainer = await _containerStorage.GetFirstIdleAsync(cancellationToken);
+                if (idleContainer != null)
+                {
+                    idleContainer.Status = ContainerStatus.Busy;
+                    idleContainer.SessionId = sessionId;
+                    await _containerStorage.SaveAsync(idleContainer, cancellationToken);
+                    await _dockerService.AssignSessionToContainerAsync(idleContainer.ContainerId, sessionId, cancellationToken);
+                    _logger?.LogInformation("Allocated container {ContainerId} to session {SessionId}", idleContainer.ShortId, sessionId);
+                    NotifyStatusChanged();
 
-                // 在后台补充预热容器（如果还有空间）
-                _ = TryPrewarmOneAsync(CancellationToken.None);
+                    // 在后台补充预热容器（如果还有空间）
+                    _ = TryPrewarmOneAsync(CancellationToken.None);
 
-                return idleContainer;
+                    return idleContainer;
+                }
             }
 
             // 检查是否达到最大容器数（排除正在销毁的容器）
@@ -147,13 +166,13 @@ public class DockerPoolService : IDockerPoolService
                 return null;
             }
 
-            // 创建新容器并立即分配
-            var newContainer = await CreateAndWarmContainerAsync(cancellationToken);
+            // 创建新容器（使用指定的资源限制和网络模式）
+            var newContainer = await _dockerService.CreateContainerAsync(sessionId, false, resourceLimits, networkMode, cancellationToken);
             newContainer.Status = ContainerStatus.Busy;
             newContainer.SessionId = sessionId;
             await _containerStorage.SaveAsync(newContainer, cancellationToken);
-            await _dockerService.AssignSessionToContainerAsync(newContainer.ContainerId, sessionId, cancellationToken);
-            _logger?.LogInformation("Created and allocated new container {ContainerId} to session {SessionId}", newContainer.ShortId, sessionId);
+            _logger?.LogInformation("Created and allocated new container {ContainerId} to session {SessionId} (memory: {Memory}MB, cpu: {Cpu}, network: {Network})",
+                newContainer.ShortId, sessionId, resourceLimits.MemoryBytes / 1024 / 1024, resourceLimits.CpuCores, networkMode);
             NotifyStatusChanged();
             return newContainer;
         }

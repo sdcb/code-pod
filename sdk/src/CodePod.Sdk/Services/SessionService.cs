@@ -17,6 +17,11 @@ public interface ISessionService
     Task<SessionInfo> CreateSessionAsync(string? name = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 创建会话（带完整选项）
+    /// </summary>
+    Task<SessionInfo> CreateSessionAsync(SessionOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 获取系统配置的最大超时时间（秒）
     /// </summary>
     int MaxTimeoutSeconds { get; }
@@ -87,13 +92,29 @@ public class SessionService : ISessionService
 
     public int MaxTimeoutSeconds => _config.SessionTimeoutSeconds;
 
-    public async Task<SessionInfo> CreateSessionAsync(string? name = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
+    public Task<SessionInfo> CreateSessionAsync(string? name = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
+    {
+        return CreateSessionAsync(new SessionOptions
+        {
+            Name = name,
+            TimeoutSeconds = timeoutSeconds
+        }, cancellationToken);
+    }
+
+    public async Task<SessionInfo> CreateSessionAsync(SessionOptions options, CancellationToken cancellationToken = default)
     {
         // 验证超时时间
-        if (timeoutSeconds.HasValue && timeoutSeconds.Value > _config.SessionTimeoutSeconds)
+        if (options.TimeoutSeconds.HasValue && options.TimeoutSeconds.Value > _config.SessionTimeoutSeconds)
         {
-            throw new TimeoutExceedsLimitException(timeoutSeconds.Value, _config.SessionTimeoutSeconds);
+            throw new TimeoutExceedsLimitException(options.TimeoutSeconds.Value, _config.SessionTimeoutSeconds);
         }
+
+        // 验证资源限制
+        var resourceLimits = options.ResourceLimits ?? _config.DefaultResourceLimits.Clone();
+        resourceLimits.Validate(_config.MaxResourceLimits);
+
+        // 网络模式
+        var networkMode = options.NetworkMode ?? _config.DefaultNetworkMode;
 
         var sessionId = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
@@ -101,18 +122,21 @@ public class SessionService : ISessionService
         var session = new SessionInfo
         {
             SessionId = sessionId,
-            Name = name ?? $"Session-{sessionId[..8]}",
+            Name = options.Name ?? $"Session-{sessionId[..8]}",
             CreatedAt = now,
             LastActivityAt = now,
             Status = SessionStatus.Queued,
-            TimeoutSeconds = timeoutSeconds
+            TimeoutSeconds = options.TimeoutSeconds,
+            ResourceLimits = resourceLimits,
+            NetworkMode = networkMode
         };
 
         await _sessionStorage.SaveAsync(session, cancellationToken);
-        _logger?.LogInformation("Session {SessionId} created", sessionId);
+        _logger?.LogInformation("Session {SessionId} created (memory: {Memory}MB, cpu: {Cpu}, network: {Network})",
+            sessionId, resourceLimits.MemoryBytes / 1024 / 1024, resourceLimits.CpuCores, networkMode);
 
-        // 尝试分配容器
-        var container = await _poolService.AcquireContainerAsync(sessionId, cancellationToken);
+        // 尝试分配容器（带资源限制和网络模式）
+        var container = await _poolService.AcquireContainerAsync(sessionId, resourceLimits, networkMode, cancellationToken);
 
         if (container != null)
         {

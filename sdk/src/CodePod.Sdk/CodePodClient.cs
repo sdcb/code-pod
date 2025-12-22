@@ -73,6 +73,16 @@ public class CodePodClient : IDisposable
     /// </summary>
     public int MaxTimeoutSeconds => _sessionService.MaxTimeoutSeconds;
 
+    /// <summary>
+    /// 获取最大资源限制
+    /// </summary>
+    public ResourceLimits MaxResourceLimits => _config.MaxResourceLimits;
+
+    /// <summary>
+    /// 获取默认网络模式
+    /// </summary>
+    public NetworkMode DefaultNetworkMode => _config.DefaultNetworkMode;
+
     #region Session Operations
 
     /// <summary>
@@ -81,6 +91,14 @@ public class CodePodClient : IDisposable
     public async Task<SessionInfo> CreateSessionAsync(string? name = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
     {
         return await _sessionService.CreateSessionAsync(name, timeoutSeconds, cancellationToken);
+    }
+
+    /// <summary>
+    /// 创建新会话（带资源限制和网络模式）
+    /// </summary>
+    public async Task<SessionInfo> CreateSessionAsync(SessionOptions options, CancellationToken cancellationToken = default)
+    {
+        return await _sessionService.CreateSessionAsync(options, cancellationToken);
     }
 
     /// <summary>
@@ -140,11 +158,71 @@ public class CodePodClient : IDisposable
     }
 
     /// <summary>
+    /// 在会话中执行命令数组（直接执行，不经过shell包装）
+    /// 例如: ["python", "-c", "print('hello')"]
+    /// </summary>
+    public async Task<CommandResult> ExecuteCommandAsync(string sessionId, string[] command, string? workingDirectory = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
+    {
+        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        
+        await _sessionService.SetExecutingCommandAsync(sessionId, true, cancellationToken);
+        try
+        {
+            var result = await _dockerService.ExecuteCommandAsync(
+                session.ContainerId!,
+                command,
+                workingDirectory ?? _config.WorkDir,
+                timeoutSeconds ?? 60,
+                cancellationToken);
+
+            await _sessionService.IncrementCommandCountAsync(sessionId, cancellationToken);
+            return result;
+        }
+        finally
+        {
+            await _sessionService.SetExecutingCommandAsync(sessionId, false, cancellationToken);
+        }
+    }
+
+    /// <summary>
     /// 流式执行命令
     /// </summary>
     public async IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(
         string sessionId, 
         string command, 
+        string? workingDirectory = null, 
+        int? timeoutSeconds = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        
+        await _sessionService.SetExecutingCommandAsync(sessionId, true, cancellationToken);
+        try
+        {
+            await foreach (var outputEvent in _dockerService.ExecuteCommandStreamAsync(
+                session.ContainerId!,
+                command,
+                workingDirectory ?? _config.WorkDir,
+                timeoutSeconds ?? 60,
+                cancellationToken))
+            {
+                yield return outputEvent;
+            }
+
+            await _sessionService.IncrementCommandCountAsync(sessionId, cancellationToken);
+        }
+        finally
+        {
+            await _sessionService.SetExecutingCommandAsync(sessionId, false, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// 流式执行命令数组（直接执行，不经过shell包装）
+    /// </summary>
+    public async IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(
+        string sessionId, 
+        string[] command, 
         string? workingDirectory = null, 
         int? timeoutSeconds = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -265,6 +343,54 @@ public class CodePodClient : IDisposable
     public async Task TriggerPrewarmAsync(CancellationToken cancellationToken = default)
     {
         await _poolService.EnsurePrewarmAsync(cancellationToken);
+    }
+
+    #endregion
+
+    #region Usage and Metrics
+
+    /// <summary>
+    /// 获取会话使用量统计
+    /// </summary>
+    public async Task<SessionUsage?> GetSessionUsageAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        var usage = await _dockerService.GetContainerStatsAsync(session.ContainerId!, cancellationToken);
+        
+        if (usage != null)
+        {
+            usage.SessionId = sessionId;
+            usage.CommandCount = session.CommandCount;
+            usage.CreatedAt = session.CreatedAt;
+        }
+        
+        return usage;
+    }
+
+    /// <summary>
+    /// 获取 Artifacts 目录中的文件列表
+    /// </summary>
+    public async Task<List<FileEntry>> GetArtifactsAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        var artifactsPath = $"{_config.WorkDir}/{_config.ArtifactsDir}";
+        try
+        {
+            return await ListDirectoryAsync(sessionId, artifactsPath, cancellationToken);
+        }
+        catch
+        {
+            // Artifacts 目录可能不存在
+            return new List<FileEntry>();
+        }
+    }
+
+    /// <summary>
+    /// 下载 Artifact 文件
+    /// </summary>
+    public async Task<byte[]> DownloadArtifactAsync(string sessionId, string fileName, CancellationToken cancellationToken = default)
+    {
+        var artifactPath = $"{_config.WorkDir}/{_config.ArtifactsDir}/{fileName}";
+        return await DownloadFileAsync(sessionId, artifactPath, cancellationToken);
     }
 
     #endregion

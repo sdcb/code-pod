@@ -11,6 +11,11 @@ public class CommandRequest
     public required string Command { get; init; }
 
     /// <summary>
+    /// 命令数组（直接执行，不经过shell包装）。与 Command 二选一
+    /// </summary>
+    public string[]? CommandArray { get; init; }
+
+    /// <summary>
     /// 工作目录（相对于容器根目录）
     /// </summary>
     public string WorkingDirectory { get; init; } = "/app";
@@ -50,6 +55,11 @@ public class CommandResult
     /// 是否成功
     /// </summary>
     public bool Success => ExitCode == 0;
+
+    /// <summary>
+    /// 输出是否被截断
+    /// </summary>
+    public bool IsTruncated { get; init; }
 }
 
 /// <summary>
