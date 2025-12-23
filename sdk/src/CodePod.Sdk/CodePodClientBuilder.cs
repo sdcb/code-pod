@@ -1,6 +1,7 @@
 using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Services;
 using CodePod.Sdk.Storage;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace CodePod.Sdk;
@@ -11,10 +12,13 @@ namespace CodePod.Sdk;
 public class CodePodClientBuilder
 {
     private CodePodConfig _config = new();
-    private ISessionStorage? _sessionStorage;
-    private IContainerStorage? _containerStorage;
     private IDockerClientFactory? _dockerClientFactory;
     private ILoggerFactory? _loggerFactory;
+    private IDbContextFactory<CodePodDbContext>? _dbContextFactory;
+    private Action<DbContextOptionsBuilder>? _dbContextOptionsAction;
+    private bool _useInMemoryDatabase = false;
+    private string? _inMemoryDatabaseName;
+    private bool _enableStateSync = false;
 
     /// <summary>
     /// 配置选项
@@ -31,24 +35,6 @@ public class CodePodClientBuilder
     public CodePodClientBuilder WithConfig(CodePodConfig config)
     {
         _config = config;
-        return this;
-    }
-
-    /// <summary>
-    /// 使用自定义会话存储
-    /// </summary>
-    public CodePodClientBuilder WithSessionStorage(ISessionStorage storage)
-    {
-        _sessionStorage = storage;
-        return this;
-    }
-
-    /// <summary>
-    /// 使用自定义容器存储
-    /// </summary>
-    public CodePodClientBuilder WithContainerStorage(IContainerStorage storage)
-    {
-        _containerStorage = storage;
         return this;
     }
 
@@ -71,33 +57,94 @@ public class CodePodClientBuilder
     }
 
     /// <summary>
+    /// 使用 EF Core InMemory 数据库（适合测试）
+    /// </summary>
+    /// <param name="databaseName">数据库名称，默认为随机生成</param>
+    public CodePodClientBuilder UseInMemoryDatabase(string? databaseName = null)
+    {
+        _useInMemoryDatabase = true;
+        _inMemoryDatabaseName = databaseName ?? $"CodePod_{Guid.NewGuid():N}";
+        return this;
+    }
+
+    /// <summary>
+    /// 使用自定义数据库配置（例如 SQLite、SQL Server 等）
+    /// </summary>
+    /// <param name="optionsAction">DbContext 配置委托</param>
+    /// <param name="enableStateSync">是否启用 Docker 状态同步（持久化数据库建议启用）</param>
+    /// <example>
+    /// // 使用 SQLite
+    /// builder.UseDatabase(options => options.UseSqlite("Data Source=codepod.db"), enableStateSync: true);
+    /// 
+    /// // 使用 SQL Server
+    /// builder.UseDatabase(options => options.UseSqlServer(connectionString), enableStateSync: true);
+    /// </example>
+    public CodePodClientBuilder UseDatabase(Action<DbContextOptionsBuilder> optionsAction, bool enableStateSync = true)
+    {
+        _dbContextOptionsAction = optionsAction;
+        _enableStateSync = enableStateSync;
+        return this;
+    }
+
+    /// <summary>
+    /// 使用自定义 DbContext 工厂（高级场景）
+    /// </summary>
+    /// <param name="factory">DbContext 工厂实例</param>
+    /// <param name="enableStateSync">是否启用 Docker 状态同步</param>
+    public CodePodClientBuilder WithDbContextFactory(IDbContextFactory<CodePodDbContext> factory, bool enableStateSync = true)
+    {
+        _dbContextFactory = factory;
+        _enableStateSync = enableStateSync;
+        return this;
+    }
+
+    /// <summary>
     /// 构建 CodePodClient 实例
     /// </summary>
     public CodePodClient Build()
     {
-        var sessionStorage = _sessionStorage ?? new InMemorySessionStorage();
-        var containerStorage = _containerStorage ?? new InMemoryContainerStorage();
+        // 创建 DbContext 工厂
+        var dbContextFactory = CreateDbContextFactory();
+
+        // 确保数据库已创建
+        using (var context = dbContextFactory.CreateDbContext())
+        {
+            context.Database.EnsureCreated();
+        }
+
         var dockerClientFactory = _dockerClientFactory ?? new DockerClientFactory();
 
         var dockerService = new DockerService(
-            dockerClientFactory, 
-            _config, 
+            dockerClientFactory,
+            _config,
             _loggerFactory?.CreateLogger<DockerService>());
+
+        // 创建状态同步服务（如果启用）
+        IDockerStateSyncService? stateSyncService = null;
+        if (_enableStateSync)
+        {
+            stateSyncService = new DockerStateSyncService(
+                dockerService,
+                dbContextFactory,
+                _config,
+                _loggerFactory?.CreateLogger<DockerStateSyncService>());
+        }
 
         var poolService = new DockerPoolService(
             dockerService,
-            containerStorage,
+            dbContextFactory,
             _config,
-            _loggerFactory?.CreateLogger<DockerPoolService>());
+            _loggerFactory?.CreateLogger<DockerPoolService>(),
+            stateSyncService);
 
         var sessionService = new SessionService(
-            sessionStorage,
+            dbContextFactory,
             poolService,
             _config,
             _loggerFactory?.CreateLogger<SessionService>());
 
         var cleanupService = new SessionCleanupService(
-            sessionStorage,
+            dbContextFactory,
             sessionService,
             _config,
             _loggerFactory?.CreateLogger<SessionCleanupService>());
@@ -107,7 +154,56 @@ public class CodePodClientBuilder
             poolService,
             sessionService,
             cleanupService,
-            containerStorage,
+            dbContextFactory,
             _config);
+    }
+
+    private IDbContextFactory<CodePodDbContext> CreateDbContextFactory()
+    {
+        // 优先使用显式提供的工厂
+        if (_dbContextFactory != null)
+        {
+            return _dbContextFactory;
+        }
+
+        var optionsBuilder = new DbContextOptionsBuilder<CodePodDbContext>();
+
+        if (_useInMemoryDatabase)
+        {
+            // 使用 InMemory 数据库
+            optionsBuilder.UseInMemoryDatabase(_inMemoryDatabaseName!);
+        }
+        else if (_dbContextOptionsAction != null)
+        {
+            // 使用自定义配置
+            _dbContextOptionsAction(optionsBuilder);
+        }
+        else
+        {
+            // 默认使用 InMemory 数据库
+            _useInMemoryDatabase = true;
+            _inMemoryDatabaseName = $"CodePod_{Guid.NewGuid():N}";
+            optionsBuilder.UseInMemoryDatabase(_inMemoryDatabaseName);
+        }
+
+        return new CodePodDbContextFactory(optionsBuilder.Options);
+    }
+}
+
+/// <summary>
+/// 简单的 DbContext 工厂实现
+/// </summary>
+internal class CodePodDbContextFactory : IDbContextFactory<CodePodDbContext>
+{
+    private readonly DbContextOptions<CodePodDbContext> _options;
+
+    public CodePodDbContextFactory(DbContextOptions<CodePodDbContext> options)
+    {
+        _options = options;
+    }
+
+    public CodePodDbContext CreateDbContext()
+    {
+        return new CodePodDbContext(_options);
     }
 }

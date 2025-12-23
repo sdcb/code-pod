@@ -1,6 +1,7 @@
 using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Models;
 using CodePod.Sdk.Storage;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace CodePod.Sdk.Services;
@@ -21,18 +22,18 @@ public interface ISessionCleanupService
 /// </summary>
 public class SessionCleanupService : ISessionCleanupService
 {
-    private readonly ISessionStorage _sessionStorage;
+    private readonly IDbContextFactory<CodePodDbContext> _contextFactory;
     private readonly ISessionService _sessionService;
     private readonly CodePodConfig _config;
     private readonly ILogger<SessionCleanupService>? _logger;
 
     public SessionCleanupService(
-        ISessionStorage sessionStorage,
+        IDbContextFactory<CodePodDbContext> contextFactory,
         ISessionService sessionService,
         CodePodConfig config,
         ILogger<SessionCleanupService>? logger = null)
     {
-        _sessionStorage = sessionStorage;
+        _contextFactory = contextFactory;
         _sessionService = sessionService;
         _config = config;
         _logger = logger;
@@ -40,10 +41,17 @@ public class SessionCleanupService : ISessionCleanupService
 
     public async Task CleanupExpiredSessionsAsync(CancellationToken cancellationToken = default)
     {
-        var sessions = await _sessionStorage.GetAllActiveAsync(cancellationToken);
+        List<SessionEntity> activeSessions;
+        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            activeSessions = await context.Sessions
+                .Where(s => s.Status != SessionStatus.Destroyed)
+                .ToListAsync(cancellationToken);
+        }
+
         var now = DateTimeOffset.UtcNow;
 
-        foreach (var session in sessions)
+        foreach (var session in activeSessions)
         {
             // 跳过正在执行命令的会话
             if (session.IsExecutingCommand)
@@ -59,7 +67,7 @@ public class SessionCleanupService : ISessionCleanupService
             {
                 _logger?.LogInformation("Session {SessionId} expired (timeout: {Timeout}s, last activity: {LastActivity})",
                     session.SessionId, timeoutSeconds, session.LastActivityAt);
-                
+
                 try
                 {
                     await _sessionService.DestroySessionAsync(session.SessionId, cancellationToken);

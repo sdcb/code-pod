@@ -2,6 +2,7 @@ using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Exceptions;
 using CodePod.Sdk.Models;
 using CodePod.Sdk.Storage;
+using Microsoft.EntityFrameworkCore;
 
 namespace CodePod.Sdk;
 
@@ -14,7 +15,7 @@ public class CodePodClient : IDisposable
     private readonly Services.IDockerPoolService _poolService;
     private readonly Services.ISessionService _sessionService;
     private readonly Services.ISessionCleanupService _cleanupService;
-    private readonly IContainerStorage _containerStorage;
+    private readonly IDbContextFactory<CodePodDbContext> _contextFactory;
     private readonly CodePodConfig _config;
     private bool _initialized;
 
@@ -26,14 +27,14 @@ public class CodePodClient : IDisposable
         Services.IDockerPoolService poolService,
         Services.ISessionService sessionService,
         Services.ISessionCleanupService cleanupService,
-        IContainerStorage containerStorage,
+        IDbContextFactory<CodePodDbContext> contextFactory,
         CodePodConfig config)
     {
         _dockerService = dockerService;
         _poolService = poolService;
         _sessionService = sessionService;
         _cleanupService = cleanupService;
-        _containerStorage = containerStorage;
+        _contextFactory = contextFactory;
         _config = config;
     }
 
@@ -52,7 +53,18 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<SystemStatus> GetStatusAsync(CancellationToken cancellationToken = default)
     {
-        var (idle, busy, warming, destroying) = await _containerStorage.GetCountByStatusAsync(cancellationToken);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var counts = await context.Containers
+            .GroupBy(c => c.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var idle = counts.FirstOrDefault(c => c.Status == ContainerStatus.Idle)?.Count ?? 0;
+        var busy = counts.FirstOrDefault(c => c.Status == ContainerStatus.Busy)?.Count ?? 0;
+        var warming = counts.FirstOrDefault(c => c.Status == ContainerStatus.Warming)?.Count ?? 0;
+        var destroying = counts.FirstOrDefault(c => c.Status == ContainerStatus.Destroying)?.Count ?? 0;
+
         var sessions = await _sessionService.GetAllSessionsAsync(cancellationToken);
         var sessionList = sessions.ToList();
 

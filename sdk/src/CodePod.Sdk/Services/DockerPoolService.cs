@@ -1,6 +1,7 @@
 using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Models;
 using CodePod.Sdk.Storage;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace CodePod.Sdk.Services;
@@ -62,7 +63,8 @@ public interface IDockerPoolService
 public class DockerPoolService : IDockerPoolService
 {
     private readonly IDockerService _dockerService;
-    private readonly IContainerStorage _containerStorage;
+    private readonly IDbContextFactory<CodePodDbContext> _contextFactory;
+    private readonly IDockerStateSyncService? _stateSyncService;
     private readonly CodePodConfig _config;
     private readonly ILogger<DockerPoolService>? _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -72,14 +74,16 @@ public class DockerPoolService : IDockerPoolService
 
     public DockerPoolService(
         IDockerService dockerService,
-        IContainerStorage containerStorage,
+        IDbContextFactory<CodePodDbContext> contextFactory,
         CodePodConfig config,
-        ILogger<DockerPoolService>? logger = null)
+        ILogger<DockerPoolService>? logger = null,
+        IDockerStateSyncService? stateSyncService = null)
     {
         _dockerService = dockerService;
-        _containerStorage = containerStorage;
+        _contextFactory = contextFactory;
         _config = config;
         _logger = logger;
+        _stateSyncService = stateSyncService;
     }
 
     public async Task EnsurePrewarmAsync(CancellationToken cancellationToken = default)
@@ -91,33 +95,38 @@ public class DockerPoolService : IDockerPoolService
         // 确保镜像存在
         await _dockerService.EnsureImageAsync(cancellationToken);
 
-        // 清理旧的受管理容器
-        var existingContainers = await _dockerService.GetManagedContainersAsync(cancellationToken);
-        foreach (var container in existingContainers)
+        // 同步 Docker 状态到数据库（如果启用了状态同步服务）
+        if (_stateSyncService != null)
         {
-            _logger?.LogInformation("Cleaning up leftover container {ContainerId}", container.ShortId);
-            try
-            {
-                await _dockerService.DeleteContainerAsync(container.ContainerId, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "Failed to clean up container: {ContainerId}", container.ShortId);
-            }
+            await _stateSyncService.SyncStateAsync(cancellationToken);
         }
 
-        // 预热容器
-        _logger?.LogInformation("Starting to warm {Count} containers...", _config.PrewarmCount);
-        var prewarmTasks = new List<Task>();
-        for (int i = 0; i < _config.PrewarmCount && i < _config.MaxContainers; i++)
+        // 计算需要预热的容器数量
+        var (idle, busy, warming, _) = await GetCountByStatusAsync(cancellationToken);
+        var currentUsable = idle + busy + warming;
+        var needToWarm = Math.Max(0, _config.PrewarmCount - idle);
+        var canWarm = Math.Max(0, _config.MaxContainers - currentUsable);
+        var toWarm = Math.Min(needToWarm, canWarm);
+
+        if (toWarm > 0)
         {
-            prewarmTasks.Add(CreateAndWarmContainerAsync(cancellationToken));
+            _logger?.LogInformation("Starting to warm {Count} containers (current: {Idle} idle, {Busy} busy)...",
+                toWarm, idle, busy);
+            var prewarmTasks = new List<Task>();
+            for (int i = 0; i < toWarm; i++)
+            {
+                prewarmTasks.Add(CreateAndWarmContainerAsync(cancellationToken));
+            }
+            await Task.WhenAll(prewarmTasks);
         }
-        await Task.WhenAll(prewarmTasks);
+        else
+        {
+            _logger?.LogInformation("No need to warm containers (current: {Idle} idle, {Busy} busy)", idle, busy);
+        }
 
         _initialized = true;
-        var containerCount = await _containerStorage.GetCountAsync(cancellationToken);
-        _logger?.LogInformation("Docker pool initialization completed, warmed {Count} containers", containerCount);
+        var containerCount = await GetContainerCountAsync(cancellationToken);
+        _logger?.LogInformation("Docker pool initialization completed, {Count} containers ready", containerCount);
         NotifyStatusChanged();
     }
 
@@ -140,12 +149,12 @@ public class DockerPoolService : IDockerPoolService
 
             if (isDefaultConfig)
             {
-                var idleContainer = await _containerStorage.GetFirstIdleAsync(cancellationToken);
+                var idleContainer = await GetFirstIdleContainerAsync(cancellationToken);
                 if (idleContainer != null)
                 {
                     idleContainer.Status = ContainerStatus.Busy;
                     idleContainer.SessionId = sessionId;
-                    await _containerStorage.SaveAsync(idleContainer, cancellationToken);
+                    await SaveContainerAsync(idleContainer, cancellationToken);
                     await _dockerService.AssignSessionToContainerAsync(idleContainer.ContainerId, sessionId, cancellationToken);
                     _logger?.LogInformation("Allocated container {ContainerId} to session {SessionId}", idleContainer.ShortId, sessionId);
                     NotifyStatusChanged();
@@ -158,7 +167,7 @@ public class DockerPoolService : IDockerPoolService
             }
 
             // 检查是否达到最大容器数（排除正在销毁的容器）
-            var (idleCount, busyCount, warmingCount, _) = await _containerStorage.GetCountByStatusAsync(cancellationToken);
+            var (idleCount, busyCount, warmingCount, _) = await GetCountByStatusAsync(cancellationToken);
             var activeContainerCount = idleCount + busyCount + warmingCount;
             if (activeContainerCount >= _config.MaxContainers)
             {
@@ -170,7 +179,7 @@ public class DockerPoolService : IDockerPoolService
             var newContainer = await _dockerService.CreateContainerAsync(sessionId, false, resourceLimits, networkMode, cancellationToken);
             newContainer.Status = ContainerStatus.Busy;
             newContainer.SessionId = sessionId;
-            await _containerStorage.SaveAsync(newContainer, cancellationToken);
+            await SaveContainerAsync(newContainer, cancellationToken);
             _logger?.LogInformation("Created and allocated new container {ContainerId} to session {SessionId} (memory: {Memory}MB, cpu: {Cpu}, network: {Network})",
                 newContainer.ShortId, sessionId, resourceLimits.MemoryBytes / 1024 / 1024, resourceLimits.CpuCores, networkMode);
             NotifyStatusChanged();
@@ -190,7 +199,7 @@ public class DockerPoolService : IDockerPoolService
             await _lock.WaitAsync(cancellationToken);
             try
             {
-                var (idleCount, busyCount, warmingCount, _) = await _containerStorage.GetCountByStatusAsync(cancellationToken);
+                var (idleCount, busyCount, warmingCount, _) = await GetCountByStatusAsync(cancellationToken);
                 var activeCount = idleCount + busyCount + warmingCount;
 
                 var currentAvailable = idleCount + warmingCount;
@@ -202,7 +211,7 @@ public class DockerPoolService : IDockerPoolService
                     return;
                 }
 
-                _logger?.LogInformation("Background prewarm: idle: {Idle}, warming: {Warming}, need to create: {Needed}", 
+                _logger?.LogInformation("Background prewarm: idle: {Idle}, warming: {Warming}, need to create: {Needed}",
                     idleCount, warmingCount, neededCount);
             }
             finally
@@ -228,15 +237,18 @@ public class DockerPoolService : IDockerPoolService
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            var container = await _containerStorage.GetAsync(containerId, cancellationToken);
-            if (container != null)
+            await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
             {
-                container.Status = ContainerStatus.Destroying;
-                await _containerStorage.SaveAsync(container, cancellationToken);
-                NotifyStatusChanged();
+                var entity = await context.Containers.FindAsync([containerId], cancellationToken);
+                if (entity != null)
+                {
+                    entity.Status = ContainerStatus.Destroying;
+                    await context.SaveChangesAsync(cancellationToken);
+                    NotifyStatusChanged();
+                }
             }
 
-            await _containerStorage.DeleteAsync(containerId, cancellationToken);
+            await DeleteContainerAsync(containerId, cancellationToken);
             await _dockerService.DeleteContainerAsync(containerId, cancellationToken);
             _logger?.LogInformation("Released and deleted container {ContainerId}", containerId[..Math.Min(12, containerId.Length)]);
             NotifyStatusChanged();
@@ -260,7 +272,7 @@ public class DockerPoolService : IDockerPoolService
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            var (idleCount, busyCount, warmingCount, _) = await _containerStorage.GetCountByStatusAsync(cancellationToken);
+            var (idleCount, busyCount, warmingCount, _) = await GetCountByStatusAsync(cancellationToken);
             var activeCount = idleCount + busyCount + warmingCount;
             if (activeCount >= _config.MaxContainers)
             {
@@ -282,13 +294,17 @@ public class DockerPoolService : IDockerPoolService
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            var containers = await _containerStorage.GetAllAsync(cancellationToken);
-            
-            // 标记所有容器为销毁中
-            foreach (var container in containers)
+            List<ContainerEntity> containers;
+            await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
             {
-                container.Status = ContainerStatus.Destroying;
-                await _containerStorage.SaveAsync(container, cancellationToken);
+                containers = await context.Containers.ToListAsync(cancellationToken);
+
+                // 标记所有容器为销毁中
+                foreach (var container in containers)
+                {
+                    container.Status = ContainerStatus.Destroying;
+                }
+                await context.SaveChangesAsync(cancellationToken);
             }
             NotifyStatusChanged();
 
@@ -298,11 +314,11 @@ public class DockerPoolService : IDockerPoolService
                 try
                 {
                     await _dockerService.DeleteContainerAsync(c.ContainerId, cancellationToken);
-                    await _containerStorage.DeleteAsync(c.ContainerId, cancellationToken);
+                    await DeleteContainerAsync(c.ContainerId, cancellationToken);
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning(ex, "Failed to delete container: {ContainerId}", c.ShortId);
+                    _logger?.LogWarning(ex, "Failed to delete container: {ContainerId}", c.ContainerId[..Math.Min(12, c.ContainerId.Length)]);
                 }
             });
             await Task.WhenAll(deleteTasks);
@@ -318,8 +334,9 @@ public class DockerPoolService : IDockerPoolService
 
     public async Task<List<ContainerInfo>> GetAllContainersAsync(CancellationToken cancellationToken = default)
     {
-        var containers = await _containerStorage.GetAllAsync(cancellationToken);
-        return containers.ToList();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entities = await context.Containers.ToListAsync(cancellationToken);
+        return entities.Select(e => e.ToModel()).ToList();
     }
 
     private async Task<ContainerInfo> CreateAndWarmContainerAsync(CancellationToken cancellationToken)
@@ -335,7 +352,7 @@ public class DockerPoolService : IDockerPoolService
             Status = ContainerStatus.Warming,
             CreatedAt = DateTimeOffset.UtcNow
         };
-        await _containerStorage.SaveAsync(warmingContainer, cancellationToken);
+        await SaveContainerAsync(warmingContainer, cancellationToken);
         NotifyStatusChanged();
 
         try
@@ -363,7 +380,7 @@ public class DockerPoolService : IDockerPoolService
             await _dockerService.ExecuteCommandAsync(containerInfo.ContainerId, "echo ready", "/app", 10, cancellationToken);
 
             // 移除临时占位，添加真实容器
-            await _containerStorage.DeleteAsync(tempId, cancellationToken);
+            await DeleteContainerAsync(tempId, cancellationToken);
 
             var readyContainer = new ContainerInfo
             {
@@ -377,7 +394,7 @@ public class DockerPoolService : IDockerPoolService
                 Labels = containerInfo.Labels
             };
 
-            await _containerStorage.SaveAsync(readyContainer, cancellationToken);
+            await SaveContainerAsync(readyContainer, cancellationToken);
             _logger?.LogInformation("Container {ContainerId} warmed up", readyContainer.ShortId);
             NotifyStatusChanged();
 
@@ -385,11 +402,72 @@ public class DockerPoolService : IDockerPoolService
         }
         catch
         {
-            await _containerStorage.DeleteAsync(tempId, cancellationToken);
+            await DeleteContainerAsync(tempId, cancellationToken);
             NotifyStatusChanged();
             throw;
         }
     }
+
+    #region Database Operations
+
+    private async Task SaveContainerAsync(ContainerInfo container, CancellationToken cancellationToken)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var existing = await context.Containers.FindAsync([container.ContainerId], cancellationToken);
+        if (existing == null)
+        {
+            context.Containers.Add(ContainerEntity.FromModel(container));
+        }
+        else
+        {
+            existing.UpdateFromModel(container);
+        }
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task DeleteContainerAsync(string containerId, CancellationToken cancellationToken)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await context.Containers.FindAsync([containerId], cancellationToken);
+        if (entity != null)
+        {
+            context.Containers.Remove(entity);
+            await context.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private async Task<ContainerInfo?> GetFirstIdleContainerAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await context.Containers
+            .Where(c => c.Status == ContainerStatus.Idle)
+            .FirstOrDefaultAsync(cancellationToken);
+        return entity?.ToModel();
+    }
+
+    private async Task<(int idle, int busy, int warming, int destroying)> GetCountByStatusAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var counts = await context.Containers
+            .GroupBy(c => c.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return (
+            idle: counts.FirstOrDefault(c => c.Status == ContainerStatus.Idle)?.Count ?? 0,
+            busy: counts.FirstOrDefault(c => c.Status == ContainerStatus.Busy)?.Count ?? 0,
+            warming: counts.FirstOrDefault(c => c.Status == ContainerStatus.Warming)?.Count ?? 0,
+            destroying: counts.FirstOrDefault(c => c.Status == ContainerStatus.Destroying)?.Count ?? 0
+        );
+    }
+
+    private async Task<int> GetContainerCountAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.Containers.CountAsync(cancellationToken);
+    }
+
+    #endregion
 
     private void NotifyStatusChanged()
     {

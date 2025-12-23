@@ -2,6 +2,7 @@ using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Exceptions;
 using CodePod.Sdk.Models;
 using CodePod.Sdk.Storage;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace CodePod.Sdk.Services;
@@ -72,19 +73,19 @@ public interface ISessionService
 /// </summary>
 public class SessionService : ISessionService
 {
-    private readonly ISessionStorage _sessionStorage;
+    private readonly IDbContextFactory<CodePodDbContext> _contextFactory;
     private readonly IDockerPoolService _poolService;
     private readonly ILogger<SessionService>? _logger;
     private readonly CodePodConfig _config;
     private readonly SemaphoreSlim _queueLock = new(1, 1);
 
     public SessionService(
-        ISessionStorage sessionStorage,
+        IDbContextFactory<CodePodDbContext> contextFactory,
         IDockerPoolService poolService,
         CodePodConfig config,
         ILogger<SessionService>? logger = null)
     {
-        _sessionStorage = sessionStorage;
+        _contextFactory = contextFactory;
         _poolService = poolService;
         _config = config;
         _logger = logger;
@@ -131,7 +132,12 @@ public class SessionService : ISessionService
             NetworkMode = networkMode
         };
 
-        await _sessionStorage.SaveAsync(session, cancellationToken);
+        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            context.Sessions.Add(SessionEntity.FromModel(session));
+            await context.SaveChangesAsync(cancellationToken);
+        }
+
         _logger?.LogInformation("Session {SessionId} created (memory: {Memory}MB, cpu: {Cpu}, network: {Network})",
             sessionId, resourceLimits.MemoryBytes / 1024 / 1024, resourceLimits.CpuCores, networkMode);
 
@@ -142,7 +148,10 @@ public class SessionService : ISessionService
         {
             session.ContainerId = container.ContainerId;
             session.Status = SessionStatus.Active;
-            await _sessionStorage.SaveAsync(session, cancellationToken);
+            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            entity?.UpdateFromModel(session);
+            await context.SaveChangesAsync(cancellationToken);
             _logger?.LogInformation("Session {SessionId} acquired container {ContainerId}", sessionId, container.ShortId);
         }
         else
@@ -151,7 +160,10 @@ public class SessionService : ISessionService
             var queuedCount = await GetQueuedCountAsync(cancellationToken);
             session.QueuePosition = queuedCount;
             session.Status = SessionStatus.Queued;
-            await _sessionStorage.SaveAsync(session, cancellationToken);
+            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            entity?.UpdateFromModel(session);
+            await context.SaveChangesAsync(cancellationToken);
             _logger?.LogInformation("Session {SessionId} queued at position {Position}", sessionId, session.QueuePosition);
         }
 
@@ -160,35 +172,47 @@ public class SessionService : ISessionService
 
     public async Task<IEnumerable<SessionInfo>> GetAllSessionsAsync(CancellationToken cancellationToken = default)
     {
-        return await _sessionStorage.GetAllActiveAsync(cancellationToken);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entities = await context.Sessions
+            .Where(s => s.Status != SessionStatus.Destroyed)
+            .ToListAsync(cancellationToken);
+        return entities.Select(e => e.ToModel()).ToList();
     }
 
     public async Task<SessionInfo?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        var session = await _sessionStorage.GetAsync(sessionId, cancellationToken);
-        if (session == null || session.Status == SessionStatus.Destroyed)
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+        if (entity == null || entity.Status == SessionStatus.Destroyed)
         {
             return null;
         }
-        return session;
+        return entity.ToModel();
     }
 
     public async Task DestroySessionAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        var session = await _sessionStorage.GetAsync(sessionId, cancellationToken);
-        if (session == null || session.Status == SessionStatus.Destroyed)
+        string? containerId = null;
+
+        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            return;
+            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            if (entity == null || entity.Status == SessionStatus.Destroyed)
+            {
+                return;
+            }
+
+            containerId = entity.ContainerId;
+            entity.Status = SessionStatus.Destroyed;
+            await context.SaveChangesAsync(cancellationToken);
         }
 
-        session.Status = SessionStatus.Destroyed;
-        await _sessionStorage.SaveAsync(session, cancellationToken);
         _logger?.LogInformation("Session {SessionId} destroyed", sessionId);
 
         // 释放并删除容器
-        if (!string.IsNullOrEmpty(session.ContainerId))
+        if (!string.IsNullOrEmpty(containerId))
         {
-            await _poolService.ReleaseContainerAsync(session.ContainerId, cancellationToken);
+            await _poolService.ReleaseContainerAsync(containerId, cancellationToken);
         }
 
         // 尝试处理队列
@@ -200,54 +224,58 @@ public class SessionService : ISessionService
 
     public async Task UpdateSessionActivityAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        var session = await _sessionStorage.GetAsync(sessionId, cancellationToken);
-        if (session != null)
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+        if (entity != null)
         {
-            session.LastActivityAt = DateTimeOffset.UtcNow;
-            await _sessionStorage.SaveAsync(session, cancellationToken);
+            entity.LastActivityAt = DateTimeOffset.UtcNow;
+            await context.SaveChangesAsync(cancellationToken);
         }
     }
 
     public async Task<int> GetQueuedCountAsync(CancellationToken cancellationToken = default)
     {
-        var queued = await _sessionStorage.GetQueuedSessionsAsync(cancellationToken);
-        return queued.Count;
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.Sessions.CountAsync(s => s.Status == SessionStatus.Queued, cancellationToken);
     }
 
     public async Task OnContainerDeletedAsync(string containerId, CancellationToken cancellationToken = default)
     {
-        var session = await _sessionStorage.GetByContainerIdAsync(containerId, cancellationToken);
-        if (session != null)
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await context.Sessions.FirstOrDefaultAsync(s => s.ContainerId == containerId, cancellationToken);
+        if (entity != null)
         {
-            session.Status = SessionStatus.Destroyed;
-            session.ContainerId = null;
-            await _sessionStorage.SaveAsync(session, cancellationToken);
-            _logger?.LogInformation("Container {ContainerId} deleted, session {SessionId} marked as destroyed", containerId[..12], session.SessionId);
+            entity.Status = SessionStatus.Destroyed;
+            entity.ContainerId = null;
+            await context.SaveChangesAsync(cancellationToken);
+            _logger?.LogInformation("Container {ContainerId} deleted, session {SessionId} marked as destroyed", containerId[..12], entity.SessionId);
         }
     }
 
     public async Task IncrementCommandCountAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        var session = await _sessionStorage.GetAsync(sessionId, cancellationToken);
-        if (session != null)
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+        if (entity != null)
         {
-            session.CommandCount++;
-            session.LastActivityAt = DateTimeOffset.UtcNow;
-            await _sessionStorage.SaveAsync(session, cancellationToken);
+            entity.CommandCount++;
+            entity.LastActivityAt = DateTimeOffset.UtcNow;
+            await context.SaveChangesAsync(cancellationToken);
         }
     }
 
     public async Task SetExecutingCommandAsync(string sessionId, bool isExecuting, CancellationToken cancellationToken = default)
     {
-        var session = await _sessionStorage.GetAsync(sessionId, cancellationToken);
-        if (session != null)
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+        if (entity != null)
         {
-            session.IsExecutingCommand = isExecuting;
+            entity.IsExecutingCommand = isExecuting;
             if (isExecuting)
             {
-                session.LastActivityAt = DateTimeOffset.UtcNow;
+                entity.LastActivityAt = DateTimeOffset.UtcNow;
             }
-            await _sessionStorage.SaveAsync(session, cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
         }
     }
 
@@ -280,24 +308,35 @@ public class SessionService : ISessionService
         try
         {
             bool promoted = false;
-            var queuedSessions = await _sessionStorage.GetQueuedSessionsAsync(cancellationToken);
 
-            foreach (var session in queuedSessions.ToList())
+            // 获取队列中的会话
+            List<SessionEntity> queuedEntities;
+            await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
             {
-                var currentSession = await _sessionStorage.GetAsync(session.SessionId, cancellationToken);
-                if (currentSession == null || currentSession.Status != SessionStatus.Queued)
+                queuedEntities = await context.Sessions
+                    .Where(s => s.Status == SessionStatus.Queued)
+                    .OrderBy(s => s.QueuePosition)
+                    .ToListAsync(cancellationToken);
+            }
+
+            foreach (var queuedEntity in queuedEntities)
+            {
+                // 重新获取最新状态
+                await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+                var entity = await context.Sessions.FindAsync([queuedEntity.SessionId], cancellationToken);
+                if (entity == null || entity.Status != SessionStatus.Queued)
                 {
                     continue;
                 }
 
-                var container = await _poolService.AcquireContainerAsync(session.SessionId, cancellationToken);
+                var container = await _poolService.AcquireContainerAsync(entity.SessionId, cancellationToken);
                 if (container != null)
                 {
-                    currentSession.ContainerId = container.ContainerId;
-                    currentSession.Status = SessionStatus.Active;
-                    currentSession.QueuePosition = 0;
-                    await _sessionStorage.SaveAsync(currentSession, cancellationToken);
-                    _logger?.LogInformation("Queued session {SessionId} acquired container {ContainerId}", session.SessionId, container.ShortId);
+                    entity.ContainerId = container.ContainerId;
+                    entity.Status = SessionStatus.Active;
+                    entity.QueuePosition = 0;
+                    await context.SaveChangesAsync(cancellationToken);
+                    _logger?.LogInformation("Queued session {SessionId} acquired container {ContainerId}", entity.SessionId, container.ShortId);
                     promoted = true;
                 }
                 else
@@ -319,12 +358,17 @@ public class SessionService : ISessionService
 
     private async Task UpdateQueuePositionsAsync(CancellationToken cancellationToken)
     {
-        var queuedSessions = await _sessionStorage.GetQueuedSessionsAsync(cancellationToken);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var queuedEntities = await context.Sessions
+            .Where(s => s.Status == SessionStatus.Queued)
+            .OrderBy(s => s.QueuePosition)
+            .ToListAsync(cancellationToken);
+
         var position = 1;
-        foreach (var session in queuedSessions)
+        foreach (var entity in queuedEntities)
         {
-            session.QueuePosition = position++;
-            await _sessionStorage.SaveAsync(session, cancellationToken);
+            entity.QueuePosition = position++;
         }
+        await context.SaveChangesAsync(cancellationToken);
     }
 }
