@@ -116,7 +116,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 获取会话详情
     /// </summary>
-    public async Task<SessionInfo> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> GetSessionAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         var session = await _sessionService.GetSessionAsync(sessionId, cancellationToken);
         return session ?? throw new SessionNotFoundException(sessionId);
@@ -134,7 +134,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 销毁会话
     /// </summary>
-    public async Task DestroySessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task DestroySessionAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         await _sessionService.DestroySessionAsync(sessionId, cancellationToken);
     }
@@ -146,7 +146,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 在会话中执行命令
     /// </summary>
-    public async Task<CommandResult> ExecuteCommandAsync(string sessionId, string command, string? workingDirectory = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
+    public async Task<CommandResult> ExecuteCommandAsync(int sessionId, string command, string? workingDirectory = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
     {
         var session = await GetActiveSessionAsync(sessionId, cancellationToken);
         
@@ -173,7 +173,7 @@ public class CodePodClient : IDisposable
     /// 在会话中执行命令数组（直接执行，不经过shell包装）
     /// 例如: ["python", "-c", "print('hello')"]
     /// </summary>
-    public async Task<CommandResult> ExecuteCommandAsync(string sessionId, string[] command, string? workingDirectory = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
+    public async Task<CommandResult> ExecuteCommandAsync(int sessionId, string[] command, string? workingDirectory = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
     {
         var session = await GetActiveSessionAsync(sessionId, cancellationToken);
         
@@ -200,7 +200,7 @@ public class CodePodClient : IDisposable
     /// 流式执行命令
     /// </summary>
     public async IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(
-        string sessionId, 
+        int sessionId, 
         string command, 
         string? workingDirectory = null, 
         int? timeoutSeconds = null,
@@ -233,7 +233,7 @@ public class CodePodClient : IDisposable
     /// 流式执行命令数组（直接执行，不经过shell包装）
     /// </summary>
     public async IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(
-        string sessionId, 
+        int sessionId, 
         string[] command, 
         string? workingDirectory = null, 
         int? timeoutSeconds = null,
@@ -269,7 +269,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 上传文件到会话容器
     /// </summary>
-    public async Task UploadFileAsync(string sessionId, string targetPath, byte[] content, CancellationToken cancellationToken = default)
+    public async Task UploadFileAsync(int sessionId, string targetPath, byte[] content, CancellationToken cancellationToken = default)
     {
         var session = await GetActiveSessionAsync(sessionId, cancellationToken);
         await _dockerService.UploadFileAsync(session.ContainerId!, targetPath, content, cancellationToken);
@@ -279,7 +279,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 列出目录
     /// </summary>
-    public async Task<List<FileEntry>> ListDirectoryAsync(string sessionId, string path, CancellationToken cancellationToken = default)
+    public async Task<List<FileEntry>> ListDirectoryAsync(int sessionId, string path, CancellationToken cancellationToken = default)
     {
         var session = await GetActiveSessionAsync(sessionId, cancellationToken);
         var result = await _dockerService.ListDirectoryAsync(session.ContainerId!, path, cancellationToken);
@@ -290,7 +290,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 下载文件
     /// </summary>
-    public async Task<byte[]> DownloadFileAsync(string sessionId, string filePath, CancellationToken cancellationToken = default)
+    public async Task<byte[]> DownloadFileAsync(int sessionId, string filePath, CancellationToken cancellationToken = default)
     {
         var session = await GetActiveSessionAsync(sessionId, cancellationToken);
         var result = await _dockerService.DownloadFileAsync(session.ContainerId!, filePath, cancellationToken);
@@ -301,7 +301,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 删除文件
     /// </summary>
-    public async Task DeleteFileAsync(string sessionId, string filePath, CancellationToken cancellationToken = default)
+    public async Task DeleteFileAsync(int sessionId, string filePath, CancellationToken cancellationToken = default)
     {
         var session = await GetActiveSessionAsync(sessionId, cancellationToken);
         var result = await _dockerService.ExecuteCommandAsync(session.ContainerId!, $"rm -f \"{filePath}\"", "/", 10, cancellationToken);
@@ -364,7 +364,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 获取会话使用量统计
     /// </summary>
-    public async Task<SessionUsage?> GetSessionUsageAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<SessionUsage?> GetSessionUsageAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         var session = await GetActiveSessionAsync(sessionId, cancellationToken);
         var usage = await _dockerService.GetContainerStatsAsync(session.ContainerId!, cancellationToken);
@@ -382,7 +382,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 获取 Artifacts 目录中的文件列表
     /// </summary>
-    public async Task<List<FileEntry>> GetArtifactsAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<List<FileEntry>> GetArtifactsAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         var artifactsPath = $"{_config.WorkDir}/{_config.ArtifactsDir}";
         try
@@ -399,7 +399,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 下载 Artifact 文件
     /// </summary>
-    public async Task<byte[]> DownloadArtifactAsync(string sessionId, string fileName, CancellationToken cancellationToken = default)
+    public async Task<byte[]> DownloadArtifactAsync(int sessionId, string fileName, CancellationToken cancellationToken = default)
     {
         var artifactPath = $"{_config.WorkDir}/{_config.ArtifactsDir}/{fileName}";
         return await DownloadFileAsync(sessionId, artifactPath, cancellationToken);
@@ -419,7 +419,7 @@ public class CodePodClient : IDisposable
 
     #endregion
 
-    private async Task<SessionInfo> GetActiveSessionAsync(string sessionId, CancellationToken cancellationToken)
+    private async Task<SessionInfo> GetActiveSessionAsync(int sessionId, CancellationToken cancellationToken)
     {
         var session = await _sessionService.GetSessionAsync(sessionId, cancellationToken);
         if (session == null)

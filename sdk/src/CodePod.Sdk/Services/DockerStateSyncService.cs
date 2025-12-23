@@ -77,7 +77,7 @@ public class DockerStateSyncService : IDockerStateSyncService
             {
                 session.Status = SessionStatus.Destroyed;
                 session.ContainerId = null;
-                _logger?.LogInformation("Session {SessionId} marked as destroyed due to missing container", session.SessionId);
+                _logger?.LogInformation("Session {SessionId} marked as destroyed due to missing container", session.Id);
             }
 
             var container = await context.Containers.FindAsync([containerId], cancellationToken);
@@ -99,7 +99,7 @@ public class DockerStateSyncService : IDockerStateSyncService
             if (isRunning)
             {
                 // 运行中的容器：添加到数据库，根据是否有会话ID判断状态
-                var status = string.IsNullOrEmpty(dockerContainer.SessionId)
+                var status = dockerContainer.SessionId == null
                     ? ContainerStatus.Idle
                     : ContainerStatus.Busy;
 
@@ -122,7 +122,7 @@ public class DockerStateSyncService : IDockerStateSyncService
                     dockerContainer.ShortId, status);
 
                 // 如果有关联的会话但会话不存在，记录警告
-                if (!string.IsNullOrEmpty(dockerContainer.SessionId))
+                if (dockerContainer.SessionId != null)
                 {
                     await using var sessionContext = await _contextFactory.CreateDbContextAsync(cancellationToken);
                     var existingSession = await sessionContext.Sessions.FindAsync([dockerContainer.SessionId], cancellationToken);
@@ -166,14 +166,14 @@ public class DockerStateSyncService : IDockerStateSyncService
                 await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
 
                 // 如果有关联的会话，标记为已销毁
-                if (!string.IsNullOrEmpty(dbContainer.SessionId))
+                if (dbContainer.SessionId != null)
                 {
                     var session = await context.Sessions.FindAsync([dbContainer.SessionId], cancellationToken);
                     if (session != null && session.Status != SessionStatus.Destroyed)
                     {
                         session.Status = SessionStatus.Destroyed;
                         session.ContainerId = null;
-                        _logger?.LogInformation("Session {SessionId} marked as destroyed due to stopped container", session.SessionId);
+                        _logger?.LogInformation("Session {SessionId} marked as destroyed due to stopped container", session.Id);
                     }
                 }
 
@@ -196,7 +196,7 @@ public class DockerStateSyncService : IDockerStateSyncService
             else
             {
                 // 容器运行中，同步状态
-                var expectedStatus = string.IsNullOrEmpty(dockerContainer.SessionId)
+                var expectedStatus = dockerContainer.SessionId == null
                     ? ContainerStatus.Idle
                     : ContainerStatus.Busy;
 
@@ -207,8 +207,8 @@ public class DockerStateSyncService : IDockerStateSyncService
                 {
                     _logger?.LogWarning("Container {ContainerId} session mismatch: DB={DbSession}, Docker={DockerSession}",
                         dockerContainer.ShortId,
-                        dbContainer.SessionId ?? "(null)",
-                        dockerContainer.SessionId ?? "(null)");
+                        dbContainer.SessionId?.ToString() ?? "(null)",
+                        dockerContainer.SessionId?.ToString() ?? "(null)");
                     needsUpdate = true;
                 }
 
@@ -264,8 +264,8 @@ public class DockerStateSyncService : IDockerStateSyncService
                 var containerIdShort = session.ContainerId != null
                     ? session.ContainerId[..Math.Min(12, session.ContainerId.Length)]
                     : "(null)";
-                _logger?.LogInformation("Session {SessionId} references non-existent container {ContainerId}, marking as destroyed",
-                    session.SessionId, containerIdShort);
+                                _logger?.LogInformation("Session {SessionId} references non-existent container {ContainerId}, marking as destroyed",
+                    session.Id, containerIdShort);
 
                 session.Status = SessionStatus.Destroyed;
                 session.ContainerId = null;

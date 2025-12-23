@@ -62,7 +62,7 @@ public class OutputTruncationTests : IAsyncLifetime
             {
                 try
                 {
-                    await _client.DestroySessionAsync(session.SessionId);
+                    await _client.DestroySessionAsync(session.Id);
                 }
                 catch { }
             }
@@ -81,11 +81,11 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("小输出测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成少量输出
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "echo 'Small output'");
 
         // Assert
@@ -101,11 +101,11 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("大输出截断测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量输出 (超过 1KB)
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "for i in $(seq 1 500); do echo \"Line $i: This is a test line to generate large output\"; done");
 
         // Assert
@@ -127,11 +127,11 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("截断信息测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量输出
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "seq 1 1000");
 
         // Assert
@@ -148,11 +148,11 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("Stderr 截断测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量 stderr 输出
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "for i in $(seq 1 500); do echo \"Error line $i\" >&2; done");
 
         // Assert
@@ -171,11 +171,11 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("头尾策略测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成有特定开头和结尾的输出
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "echo '=== START ===' && for i in $(seq 1 500); do echo \"Middle line $i\"; done && echo '=== END ==='");
 
         // Assert
@@ -208,7 +208,7 @@ public class OutputTruncationTests : IAsyncLifetime
         _output.WriteLine($"Default TruncationMessage: {defaultOptions.TruncationMessage}");
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(string sessionId, int maxWaitSeconds = 30)
+    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {

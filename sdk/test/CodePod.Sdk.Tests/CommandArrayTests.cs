@@ -56,7 +56,7 @@ public class CommandArrayTests : IAsyncLifetime
             {
                 try
                 {
-                    await _client.DestroySessionAsync(session.SessionId);
+                    await _client.DestroySessionAsync(session.Id);
                 }
                 catch { }
             }
@@ -75,11 +75,11 @@ public class CommandArrayTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("命令数组基础测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 使用命令数组
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             ["echo", "Hello from command array!"]);
 
         // Assert
@@ -93,11 +93,11 @@ public class CommandArrayTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("避免转义测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 包含特殊字符的参数，使用数组形式不需要转义
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             ["echo", "Hello \"World\" with 'quotes' and $variables"]);
 
         // Assert
@@ -114,11 +114,11 @@ public class CommandArrayTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("Python 一行代码测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - AI 常用的 Python 一行代码执行
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             ["python", "-c", "print('Hello from Python!\\nLine 2\\nLine 3')"]);
 
         // Assert
@@ -135,11 +135,11 @@ public class CommandArrayTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("Python 命令数组测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             ["python", "--version"]);
 
         // Assert
@@ -153,14 +153,14 @@ public class CommandArrayTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("工作目录测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // 先创建目录
-        await _client.ExecuteCommandAsync(session.SessionId, "mkdir -p /tmp/testdir");
+        await _client.ExecuteCommandAsync(session.Id, "mkdir -p /tmp/testdir");
 
         // Act - 在指定目录执行命令数组
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             ["pwd"],
             workingDirectory: "/tmp/testdir");
 
@@ -175,12 +175,12 @@ public class CommandArrayTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("流式命令数组测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
         var outputs = new List<string>();
         await foreach (var evt in _client.ExecuteCommandStreamAsync(
-            session.SessionId,
+            session.Id,
             ["bash", "-c", "for i in 1 2 3; do echo Line$i; done"]))
         {
             if (evt.Type == CommandOutputType.Stdout)
@@ -202,7 +202,7 @@ public class CommandArrayTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("复杂 Python 代码测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // 这是 AI 经常生成的多行 Python 代码
         var pythonCode = @"
@@ -213,7 +213,7 @@ print(json.dumps(data, indent=2))
 
         // Act - 使用命令数组，代码中的引号和特殊字符不需要转义
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             ["python", "-c", pythonCode]);
 
         // Assert
@@ -231,18 +231,18 @@ print(json.dumps(data, indent=2))
     {
         // Arrange
         var session = await _client.CreateSessionAsync("字符串 vs 数组对比");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // 测试相同命令的两种方式
 
         // 方式1: 字符串（需要转义）
         var resultString = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "echo 'Hello World'");
 
         // 方式2: 数组（不需要转义）
         var resultArray = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             ["echo", "Hello World"]);
 
         // Assert - 两种方式结果应该相同
@@ -252,7 +252,7 @@ print(json.dumps(data, indent=2))
         Assert.Equal(resultString.Stdout.Trim(), resultArray.Stdout.Trim());
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(string sessionId, int maxWaitSeconds = 30)
+    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {

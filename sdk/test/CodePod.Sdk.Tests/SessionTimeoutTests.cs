@@ -19,17 +19,17 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("命令延时测试", 10);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
         var initialLastActivity = session.LastActivityAt;
 
         // Wait a bit
         await Task.Delay(1000);
 
         // Act - 执行命令
-        await Client.ExecuteCommandAsync(session.SessionId, "echo 'hello'");
+        await Client.ExecuteCommandAsync(session.Id, "echo 'hello'");
 
         // Assert
-        var updatedSession = await Client.GetSessionAsync(session.SessionId);
+        var updatedSession = await Client.GetSessionAsync(session.Id);
         Assert.True(updatedSession.LastActivityAt > initialLastActivity);
     }
 
@@ -38,16 +38,16 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("上传延时测试", 10);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
         var initialLastActivity = session.LastActivityAt;
 
         await Task.Delay(1000);
 
         // Act
-        await Client.UploadFileAsync(session.SessionId, "/app/timeout-test.txt", "Hello, World!"u8.ToArray());
+        await Client.UploadFileAsync(session.Id, "/app/timeout-test.txt", "Hello, World!"u8.ToArray());
 
         // Assert
-        var updatedSession = await Client.GetSessionAsync(session.SessionId);
+        var updatedSession = await Client.GetSessionAsync(session.Id);
         Assert.True(updatedSession.LastActivityAt > initialLastActivity);
     }
 
@@ -56,16 +56,16 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("列目录延时测试", 10);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
         var initialLastActivity = session.LastActivityAt;
 
         await Task.Delay(1000);
 
         // Act
-        await Client.ListDirectoryAsync(session.SessionId, "/app");
+        await Client.ListDirectoryAsync(session.Id, "/app");
 
         // Assert
-        var updatedSession = await Client.GetSessionAsync(session.SessionId);
+        var updatedSession = await Client.GetSessionAsync(session.Id);
         Assert.True(updatedSession.LastActivityAt > initialLastActivity);
     }
 
@@ -74,19 +74,19 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("下载延时测试", 10);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
         
         // 先上传一个文件
-        await Client.UploadFileAsync(session.SessionId, "/app/download-timeout.txt", "test content"u8.ToArray());
+        await Client.UploadFileAsync(session.Id, "/app/download-timeout.txt", "test content"u8.ToArray());
         
-        var initialLastActivity = (await Client.GetSessionAsync(session.SessionId)).LastActivityAt;
+        var initialLastActivity = (await Client.GetSessionAsync(session.Id)).LastActivityAt;
         await Task.Delay(1000);
 
         // Act
-        await Client.DownloadFileAsync(session.SessionId, "/app/download-timeout.txt");
+        await Client.DownloadFileAsync(session.Id, "/app/download-timeout.txt");
 
         // Assert
-        var updatedSession = await Client.GetSessionAsync(session.SessionId);
+        var updatedSession = await Client.GetSessionAsync(session.Id);
         Assert.True(updatedSession.LastActivityAt > initialLastActivity);
     }
 
@@ -128,7 +128,7 @@ public class SessionTimeoutTests : TestBase
 
             // Assert
             var sessions = await shortTimeoutClient.GetAllSessionsAsync();
-            Assert.DoesNotContain(sessions, s => s.SessionId == session.SessionId);
+            Assert.DoesNotContain(sessions, s => s.Id == session.Id);
         }
         finally
         {

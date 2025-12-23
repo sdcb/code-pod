@@ -57,7 +57,7 @@ public class NetworkIsolationTests : IAsyncLifetime
             {
                 try
                 {
-                    await _client.DestroySessionAsync(session.SessionId);
+                    await _client.DestroySessionAsync(session.Id);
                 }
                 catch { }
             }
@@ -82,12 +82,12 @@ public class NetworkIsolationTests : IAsyncLifetime
         };
 
         var session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试访问外部网络
         // 使用 curl 或 wget 测试（可能需要超时）
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "timeout 5 curl -s https://www.google.com || echo 'Network access blocked'",
             timeoutSeconds: 15);
 
@@ -111,11 +111,11 @@ public class NetworkIsolationTests : IAsyncLifetime
         };
 
         var session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | head -1 || echo 'no_external_interfaces'",
             timeoutSeconds: 10);
 
@@ -141,11 +141,11 @@ public class NetworkIsolationTests : IAsyncLifetime
         };
 
         var session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试 DNS 解析（不需要实际下载，更快更可靠）
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "nslookup google.com 2>&1 || host google.com 2>&1 || echo 'DNS lookup test'",
             timeoutSeconds: 15);
 
@@ -170,11 +170,11 @@ public class NetworkIsolationTests : IAsyncLifetime
         };
 
         var session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口（使用 cat /proc/net/dev 作为备选）
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 || ip addr show 2>/dev/null || echo 'no_network_tools'",
             timeoutSeconds: 10);
 
@@ -195,11 +195,11 @@ public class NetworkIsolationTests : IAsyncLifetime
     {
         // Arrange - 客户端配置默认使用 None
         var session = await _client.CreateSessionAsync("默认网络模式测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | head -1 || echo 'no_external_interfaces'",
             timeoutSeconds: 10);
 
@@ -222,7 +222,7 @@ public class NetworkIsolationTests : IAsyncLifetime
             Name = "None 模式",
             NetworkMode = NetworkMode.None
         });
-        await WaitForSessionReadyAsync(sessionNone.SessionId);
+        await WaitForSessionReadyAsync(sessionNone.Id);
 
         // 测试 2: 创建 Bridge 模式会话
         var sessionBridge = await _client.CreateSessionAsync(new SessionOptions
@@ -230,17 +230,17 @@ public class NetworkIsolationTests : IAsyncLifetime
             Name = "Bridge 模式",
             NetworkMode = NetworkMode.Bridge
         });
-        await WaitForSessionReadyAsync(sessionBridge.SessionId);
+        await WaitForSessionReadyAsync(sessionBridge.Id);
 
         // 验证两个会话有不同的网络配置
         // 使用 /proc/net/dev 来检查网络接口
         var resultNone = await _client.ExecuteCommandAsync(
-            sessionNone.SessionId,
+            sessionNone.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | wc -l",
             timeoutSeconds: 10);
 
         var resultBridge = await _client.ExecuteCommandAsync(
-            sessionBridge.SessionId,
+            sessionBridge.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | wc -l",
             timeoutSeconds: 10);
 
@@ -253,7 +253,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         Assert.NotNull(resultBridge);
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(string sessionId, int maxWaitSeconds = 30)
+    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {

@@ -27,7 +27,7 @@ public class ApiTests : TestBase
 
         // Assert
         Assert.NotNull(session);
-        Assert.NotEmpty(session.SessionId);
+        Assert.True(session.Id > 0);
         Assert.Equal("API测试会话", session.Name);
     }
 
@@ -36,13 +36,13 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("详情测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
-        var retrieved = await Client.GetSessionAsync(session.SessionId);
+        var retrieved = await Client.GetSessionAsync(session.Id);
 
         // Assert
-        Assert.Equal(session.SessionId, retrieved.SessionId);
+        Assert.Equal(session.Id, retrieved.Id);
         Assert.NotNull(retrieved.ContainerId);
     }
 
@@ -51,11 +51,11 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("命令测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
         var result = await Client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "echo 'Hello from CodePod SDK!'");
 
         // Assert
@@ -68,11 +68,11 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("错误命令测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
         var result = await Client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "nonexistent_command_12345");
 
         // Assert
@@ -85,11 +85,11 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("多行输出测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
         var result = await Client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "for i in 1 2 3; do echo \"Line $i\"; done");
 
         // Assert
@@ -103,7 +103,7 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("流式输出测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
         var stdoutEvents = new List<string>();
@@ -111,7 +111,7 @@ public class ApiTests : TestBase
         long? exitCode = null;
 
         await foreach (var evt in Client.ExecuteCommandStreamAsync(
-            session.SessionId,
+            session.Id,
             "for i in 1 2 3; do echo \"stdout: Line $i\"; echo \"stderr: Warning $i\" >&2; sleep 0.1; done"))
         {
             switch (evt.Type)
@@ -140,15 +140,15 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("上传文件测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
         var content = "Hello, this is a test file!\n测试中文内容";
         var bytes = Encoding.UTF8.GetBytes(content);
 
         // Act
-        await Client.UploadFileAsync(session.SessionId, "/app/test.txt", bytes);
+        await Client.UploadFileAsync(session.Id, "/app/test.txt", bytes);
 
         // Assert - 验证文件存在
-        var files = await Client.ListDirectoryAsync(session.SessionId, "/app");
+        var files = await Client.ListDirectoryAsync(session.Id, "/app");
         Assert.Contains(files, f => f.Name == "test.txt");
     }
 
@@ -157,12 +157,12 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("列目录测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
         var content = "test content";
-        await Client.UploadFileAsync(session.SessionId, "/app/listtest.txt", Encoding.UTF8.GetBytes(content));
+        await Client.UploadFileAsync(session.Id, "/app/listtest.txt", Encoding.UTF8.GetBytes(content));
 
         // Act
-        var files = await Client.ListDirectoryAsync(session.SessionId, "/app");
+        var files = await Client.ListDirectoryAsync(session.Id, "/app");
 
         // Assert
         Assert.NotEmpty(files);
@@ -174,12 +174,12 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("下载文件测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
         var originalContent = "Hello, this is a test file!\n测试中文内容";
-        await Client.UploadFileAsync(session.SessionId, "/app/download.txt", Encoding.UTF8.GetBytes(originalContent));
+        await Client.UploadFileAsync(session.Id, "/app/download.txt", Encoding.UTF8.GetBytes(originalContent));
 
         // Act
-        var downloadedBytes = await Client.DownloadFileAsync(session.SessionId, "/app/download.txt");
+        var downloadedBytes = await Client.DownloadFileAsync(session.Id, "/app/download.txt");
         var downloadedContent = Encoding.UTF8.GetString(downloadedBytes);
 
         // Assert
@@ -192,14 +192,14 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("删除文件测试");
-        await WaitForSessionReadyAsync(session.SessionId);
-        await Client.UploadFileAsync(session.SessionId, "/app/todelete.txt", Encoding.UTF8.GetBytes("delete me"));
+        await WaitForSessionReadyAsync(session.Id);
+        await Client.UploadFileAsync(session.Id, "/app/todelete.txt", Encoding.UTF8.GetBytes("delete me"));
 
         // Act
-        await Client.DeleteFileAsync(session.SessionId, "/app/todelete.txt");
+        await Client.DeleteFileAsync(session.Id, "/app/todelete.txt");
 
         // Assert
-        var files = await Client.ListDirectoryAsync(session.SessionId, "/app");
+        var files = await Client.ListDirectoryAsync(session.Id, "/app");
         Assert.DoesNotContain(files, f => f.Name == "todelete.txt");
     }
 
@@ -232,15 +232,15 @@ public class ApiTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("销毁测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
-        await Client.DestroySessionAsync(session.SessionId);
+        await Client.DestroySessionAsync(session.Id);
         await Task.Delay(1000); // 等待清理完成
 
         // Assert
         var sessions = await Client.GetAllSessionsAsync();
-        Assert.DoesNotContain(sessions, s => s.SessionId == session.SessionId);
+        Assert.DoesNotContain(sessions, s => s.Id == session.Id);
     }
 
     [Fact]
@@ -269,7 +269,7 @@ public class ApiTests : TestBase
         
         // Act
         var session = await Client.CreateSessionAsync("补充测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
         
         // 等待预热容器创建
         await Task.Delay(2000);
@@ -280,6 +280,6 @@ public class ApiTests : TestBase
         Assert.True(totalAfter >= 1, "Should have containers available or warming");
 
         // Cleanup
-        await Client.DestroySessionAsync(session.SessionId);
+        await Client.DestroySessionAsync(session.Id);
     }
 }

@@ -26,12 +26,12 @@ public interface IDockerService : IDisposable
     /// <summary>
     /// 创建并启动容器（使用默认资源限制和网络模式）
     /// </summary>
-    Task<ContainerInfo> CreateContainerAsync(string? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default);
+    Task<ContainerInfo> CreateContainerAsync(int? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 创建并启动容器（指定资源限制和网络模式）
     /// </summary>
-    Task<ContainerInfo> CreateContainerAsync(string? sessionId, bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default);
+    Task<ContainerInfo> CreateContainerAsync(int? sessionId, bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取所有受管理的容器
@@ -91,7 +91,7 @@ public interface IDockerService : IDisposable
     /// <summary>
     /// 更新容器的会话标签
     /// </summary>
-    Task AssignSessionToContainerAsync(string containerId, string sessionId, CancellationToken cancellationToken = default);
+    Task AssignSessionToContainerAsync(string containerId, int sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取容器使用量统计
@@ -144,12 +144,12 @@ public class DockerService : IDockerService
         });
     }
 
-    public Task<ContainerInfo> CreateContainerAsync(string? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default)
+    public Task<ContainerInfo> CreateContainerAsync(int? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default)
     {
         return CreateContainerAsync(sessionId, isWarm, null, null, cancellationToken);
     }
 
-    public async Task<ContainerInfo> CreateContainerAsync(string? sessionId, bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default)
+    public async Task<ContainerInfo> CreateContainerAsync(int? sessionId, bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default)
     {
         return await WrapDockerOperationAsync("CreateContainer", async () =>
         {
@@ -173,9 +173,9 @@ public class DockerService : IDockerService
                 [$"{_config.LabelPrefix}.network"] = network.ToString().ToLower()
             };
 
-            if (!string.IsNullOrEmpty(sessionId))
+            if (sessionId.HasValue)
             {
-                labels[$"{_config.LabelPrefix}.session"] = sessionId;
+                labels[$"{_config.LabelPrefix}.session"] = sessionId.Value.ToString();
             }
 
             var response = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
@@ -240,7 +240,8 @@ public class DockerService : IDockerService
             var result = new List<ContainerInfo>();
             foreach (var container in containers)
             {
-                container.Labels.TryGetValue($"{_config.LabelPrefix}.session", out var containerSessionId);
+                container.Labels.TryGetValue($"{_config.LabelPrefix}.session", out var sessionIdStr);
+                int? containerSessionId = int.TryParse(sessionIdStr, out var sid) ? sid : null;
 
                 result.Add(new ContainerInfo
                 {
@@ -248,7 +249,7 @@ public class DockerService : IDockerService
                     Name = container.Names.FirstOrDefault()?.TrimStart('/') ?? container.ID[..12],
                     Image = container.Image,
                     DockerStatus = container.State,
-                    Status = string.IsNullOrEmpty(containerSessionId) ? SdkContainerStatus.Idle : SdkContainerStatus.Busy,
+                    Status = containerSessionId == null ? SdkContainerStatus.Idle : SdkContainerStatus.Busy,
                     CreatedAt = container.Created,
                     SessionId = containerSessionId,
                     Labels = new Dictionary<string, string>(container.Labels)
@@ -272,7 +273,8 @@ public class DockerService : IDockerService
                     return null;
                 }
 
-                inspect.Config.Labels.TryGetValue($"{_config.LabelPrefix}.session", out var containerSessionId);
+                inspect.Config.Labels.TryGetValue($"{_config.LabelPrefix}.session", out var sessionIdStr);
+                int? containerSessionId = int.TryParse(sessionIdStr, out var sid) ? sid : null;
 
                 return new ContainerInfo
                 {
@@ -280,7 +282,7 @@ public class DockerService : IDockerService
                     Name = inspect.Name.TrimStart('/'),
                     Image = inspect.Config.Image,
                     DockerStatus = inspect.State.Status,
-                    Status = string.IsNullOrEmpty(containerSessionId) ? SdkContainerStatus.Idle : SdkContainerStatus.Busy,
+                    Status = containerSessionId == null ? SdkContainerStatus.Idle : SdkContainerStatus.Busy,
                     CreatedAt = inspect.Created,
                     StartedAt = DateTimeOffset.TryParse(inspect.State.StartedAt, out var started) ? started : null,
                     SessionId = containerSessionId,
@@ -569,7 +571,7 @@ public class DockerService : IDockerService
         }, containerId);
     }
 
-    public async Task AssignSessionToContainerAsync(string containerId, string sessionId, CancellationToken cancellationToken = default)
+    public async Task AssignSessionToContainerAsync(string containerId, int sessionId, CancellationToken cancellationToken = default)
     {
         await WrapDockerOperationAsync("AssignSession", async () =>
         {

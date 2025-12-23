@@ -126,7 +126,7 @@ public class SessionUsage
     /// <summary>
     /// 会话ID
     /// </summary>
-    public string SessionId { get; set; } = string.Empty;
+    public int SessionId { get; set; }
 
     /// <summary>
     /// 容器ID

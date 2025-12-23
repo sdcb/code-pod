@@ -14,7 +14,7 @@ public class PerformanceTests : TestBase
     public async Task SessionCreation_Performance()
     {
         var sessionCreateTimes = new List<double>();
-        var createdSessions = new List<string>();
+        var createdSessions = new List<int>();
 
         try
         {
@@ -24,10 +24,10 @@ public class PerformanceTests : TestBase
 
                 // 创建会话
                 var session = await Client.CreateSessionAsync($"性能测试-{round}");
-                createdSessions.Add(session.SessionId);
+                createdSessions.Add(session.Id);
 
                 // 等待会话就绪
-                await WaitForSessionReadyAsync(session.SessionId, 60);
+                await WaitForSessionReadyAsync(session.Id, 60);
 
                 sw.Stop();
                 sessionCreateTimes.Add(sw.Elapsed.TotalMilliseconds);
@@ -62,7 +62,7 @@ public class PerformanceTests : TestBase
     {
         // Arrange
         var session = await Client.CreateSessionAsync("命令性能测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         var commandExecTimes = new List<double>();
 
@@ -73,7 +73,7 @@ public class PerformanceTests : TestBase
                 var sw = Stopwatch.StartNew();
                 
                 var result = await Client.ExecuteCommandAsync(
-                    session.SessionId,
+                    session.Id,
                     "echo 'Performance test'");
                 
                 sw.Stop();
@@ -90,7 +90,7 @@ public class PerformanceTests : TestBase
         }
         finally
         {
-            await Client.DestroySessionAsync(session.SessionId);
+            await Client.DestroySessionAsync(session.Id);
         }
     }
 
@@ -107,33 +107,33 @@ public class PerformanceTests : TestBase
 
                 // 1. 创建会话
                 var session = await Client.CreateSessionAsync($"完整流程-{round}");
-                await WaitForSessionReadyAsync(session.SessionId);
+                await WaitForSessionReadyAsync(session.Id);
 
                 // 2. 执行一个简单命令
                 var result = await Client.ExecuteCommandAsync(
-                    session.SessionId,
+                    session.Id,
                     "echo 'Hello World!'");
                 Assert.Equal(0, result.ExitCode);
 
                 // 3. 上传一个文件
                 await Client.UploadFileAsync(
-                    session.SessionId,
+                    session.Id,
                     "/app/perf-test.txt",
                     "Performance test content"u8.ToArray());
 
                 // 4. 列出目录
-                var files = await Client.ListDirectoryAsync(session.SessionId, "/app");
+                var files = await Client.ListDirectoryAsync(session.Id, "/app");
                 Assert.Contains(files, f => f.Name == "perf-test.txt");
 
                 // 5. 下载文件
-                var downloaded = await Client.DownloadFileAsync(session.SessionId, "/app/perf-test.txt");
+                var downloaded = await Client.DownloadFileAsync(session.Id, "/app/perf-test.txt");
                 Assert.NotEmpty(downloaded);
 
                 // 6. 删除文件
-                await Client.DeleteFileAsync(session.SessionId, "/app/perf-test.txt");
+                await Client.DeleteFileAsync(session.Id, "/app/perf-test.txt");
 
                 // 7. 销毁会话
-                await Client.DestroySessionAsync(session.SessionId);
+                await Client.DestroySessionAsync(session.Id);
 
                 totalSw.Stop();
                 totalTimes.Add(totalSw.Elapsed.TotalMilliseconds);
@@ -153,7 +153,7 @@ public class PerformanceTests : TestBase
             {
                 try
                 {
-                    await Client.DestroySessionAsync(session.SessionId);
+                    await Client.DestroySessionAsync(session.Id);
                 }
                 catch
                 {

@@ -65,7 +65,7 @@ public class ResourceLimitsTests : IAsyncLifetime
             {
                 try
                 {
-                    await _client.DestroySessionAsync(session.SessionId);
+                    await _client.DestroySessionAsync(session.Id);
                 }
                 catch { }
             }
@@ -84,7 +84,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     {
         // Act
         var session = await _client.CreateSessionAsync("默认限制测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Assert
         Assert.NotNull(session);
@@ -109,7 +109,7 @@ public class ResourceLimitsTests : IAsyncLifetime
 
         // Act
         var session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Assert
         Assert.NotNull(session);
@@ -129,7 +129,7 @@ public class ResourceLimitsTests : IAsyncLifetime
 
         // Act
         var session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Assert
         Assert.NotNull(session);
@@ -175,12 +175,12 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         var session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试分配超过限制的内存（这可能会失败或被 OOM killer 杀死）
         // 使用 dotnet 分配内存
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "dotnet --version && echo 'Memory limit test passed'",
             timeoutSeconds: 30);
 
@@ -209,11 +209,11 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         var session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试创建多个子进程（可能会达到限制）
         var result = await _client.ExecuteCommandAsync(
-            session.SessionId,
+            session.Id,
             "for i in $(seq 1 5); do echo $i; done",
             timeoutSeconds: 30);
 
@@ -241,7 +241,7 @@ public class ResourceLimitsTests : IAsyncLifetime
         _output.WriteLine($"Large: {ResourceLimits.Large.MemoryBytes / 1024 / 1024}MB, {ResourceLimits.Large.CpuCores} CPU");
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(string sessionId, int maxWaitSeconds = 30)
+    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {

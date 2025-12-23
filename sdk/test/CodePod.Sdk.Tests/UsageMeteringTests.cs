@@ -56,7 +56,7 @@ public class UsageMeteringTests : IAsyncLifetime
             {
                 try
                 {
-                    await _client.DestroySessionAsync(session.SessionId);
+                    await _client.DestroySessionAsync(session.Id);
                 }
                 catch { }
             }
@@ -75,13 +75,13 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("使用量测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // 执行一些命令产生使用量
-        await _client.ExecuteCommandAsync(session.SessionId, "echo 'test'");
+        await _client.ExecuteCommandAsync(session.Id, "echo 'test'");
 
         // Act
-        var usage = await _client.GetSessionUsageAsync(session.SessionId);
+        var usage = await _client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usage);
@@ -100,19 +100,19 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("活动使用量测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // 获取初始使用量
-        var usageBefore = await _client.GetSessionUsageAsync(session.SessionId);
+        var usageBefore = await _client.GetSessionUsageAsync(session.Id);
 
         // 执行一些工作
         for (int i = 0; i < 5; i++)
         {
-            await _client.ExecuteCommandAsync(session.SessionId, $"echo 'Work iteration {i}'");
+            await _client.ExecuteCommandAsync(session.Id, $"echo 'Work iteration {i}'");
         }
 
         // 获取工作后的使用量
-        var usageAfter = await _client.GetSessionUsageAsync(session.SessionId);
+        var usageAfter = await _client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usageBefore);
@@ -131,19 +131,19 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("内存密集测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // 获取初始使用量
-        var usageBefore = await _client.GetSessionUsageAsync(session.SessionId);
+        var usageBefore = await _client.GetSessionUsageAsync(session.Id);
 
         // 执行内存密集型工作（创建大文件）
         await _client.ExecuteCommandAsync(
-            session.SessionId, 
+            session.Id, 
             "dd if=/dev/zero of=/tmp/testfile bs=1M count=10 2>/dev/null && rm /tmp/testfile",
             timeoutSeconds: 30);
 
         // 获取工作后的使用量
-        var usageAfter = await _client.GetSessionUsageAsync(session.SessionId);
+        var usageAfter = await _client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usageBefore);
@@ -159,10 +159,10 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Arrange
         var session = await _client.CreateSessionAsync("时间戳测试");
-        await WaitForSessionReadyAsync(session.SessionId);
+        await WaitForSessionReadyAsync(session.Id);
 
         // Act
-        var usage = await _client.GetSessionUsageAsync(session.SessionId);
+        var usage = await _client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usage);
@@ -177,7 +177,7 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Act & Assert
         await Assert.ThrowsAsync<CodePod.Sdk.Exceptions.SessionNotFoundException>(
-            () => _client.GetSessionUsageAsync("non-existent-session-id"));
+            () => _client.GetSessionUsageAsync(99999));
     }
 
     [Fact]
@@ -186,21 +186,21 @@ public class UsageMeteringTests : IAsyncLifetime
         // Arrange
         var session1 = await _client.CreateSessionAsync("会话1");
         var session2 = await _client.CreateSessionAsync("会话2");
-        await WaitForSessionReadyAsync(session1.SessionId);
-        await WaitForSessionReadyAsync(session2.SessionId);
+        await WaitForSessionReadyAsync(session1.Id);
+        await WaitForSessionReadyAsync(session2.Id);
 
         // 在会话1执行更多工作
         for (int i = 0; i < 10; i++)
         {
-            await _client.ExecuteCommandAsync(session1.SessionId, $"echo 'Session 1 work {i}'");
+            await _client.ExecuteCommandAsync(session1.Id, $"echo 'Session 1 work {i}'");
         }
 
         // 会话2只执行少量工作
-        await _client.ExecuteCommandAsync(session2.SessionId, "echo 'Session 2 minimal'");
+        await _client.ExecuteCommandAsync(session2.Id, "echo 'Session 2 minimal'");
 
         // Act
-        var usage1 = await _client.GetSessionUsageAsync(session1.SessionId);
-        var usage2 = await _client.GetSessionUsageAsync(session2.SessionId);
+        var usage1 = await _client.GetSessionUsageAsync(session1.Id);
+        var usage2 = await _client.GetSessionUsageAsync(session2.Id);
 
         // Assert
         Assert.NotNull(usage1);
@@ -212,7 +212,7 @@ public class UsageMeteringTests : IAsyncLifetime
         _output.WriteLine($"Session 2 CPU: {usage2.CpuUsageNanos}");
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(string sessionId, int maxWaitSeconds = 30)
+    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {

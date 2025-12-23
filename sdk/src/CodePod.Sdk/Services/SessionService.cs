@@ -35,17 +35,17 @@ public interface ISessionService
     /// <summary>
     /// 获取会话
     /// </summary>
-    Task<SessionInfo?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task<SessionInfo?> GetSessionAsync(int sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 销毁会话
     /// </summary>
-    Task DestroySessionAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task DestroySessionAsync(int sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 更新会话活动时间
     /// </summary>
-    Task UpdateSessionActivityAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task UpdateSessionActivityAsync(int sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取队列中等待的会话数
@@ -60,12 +60,12 @@ public interface ISessionService
     /// <summary>
     /// 递增命令计数
     /// </summary>
-    Task IncrementCommandCountAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task IncrementCommandCountAsync(int sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 设置会话的命令执行状态
     /// </summary>
-    Task SetExecutingCommandAsync(string sessionId, bool isExecuting, CancellationToken cancellationToken = default);
+    Task SetExecutingCommandAsync(int sessionId, bool isExecuting, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -117,25 +117,38 @@ public class SessionService : ISessionService
         // 网络模式
         var networkMode = options.NetworkMode ?? _config.DefaultNetworkMode;
 
-        var sessionId = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
 
-        var session = new SessionInfo
+        var sessionEntity = new SessionEntity
         {
-            SessionId = sessionId,
-            Name = options.Name ?? $"Session-{sessionId[..8]}",
+            Name = options.Name,
             CreatedAt = now,
             LastActivityAt = now,
             Status = SessionStatus.Queued,
             TimeoutSeconds = options.TimeoutSeconds,
-            ResourceLimits = resourceLimits,
+            ResourceLimitsJson = System.Text.Json.JsonSerializer.Serialize(resourceLimits),
             NetworkMode = networkMode
         };
 
+        // 先保存以获取自增 ID
         await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            context.Sessions.Add(SessionEntity.FromModel(session));
+            context.Sessions.Add(sessionEntity);
             await context.SaveChangesAsync(cancellationToken);
+        }
+
+        var sessionId = sessionEntity.Id;
+
+        // 更新 Name（如果未指定则使用 ID）
+        if (string.IsNullOrEmpty(sessionEntity.Name))
+        {
+            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            if (entity != null)
+            {
+                entity.Name = $"Session-{sessionId}";
+                await context.SaveChangesAsync(cancellationToken);
+            }
         }
 
         _logger?.LogInformation("Session {SessionId} created (memory: {Memory}MB, cpu: {Cpu}, network: {Network})",
@@ -146,28 +159,37 @@ public class SessionService : ISessionService
 
         if (container != null)
         {
-            session.ContainerId = container.ContainerId;
-            session.Status = SessionStatus.Active;
             await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
             var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
-            entity?.UpdateFromModel(session);
-            await context.SaveChangesAsync(cancellationToken);
+            if (entity != null)
+            {
+                entity.ContainerId = container.ContainerId;
+                entity.Status = SessionStatus.Active;
+                await context.SaveChangesAsync(cancellationToken);
+            }
             _logger?.LogInformation("Session {SessionId} acquired container {ContainerId}", sessionId, container.ShortId);
         }
         else
         {
             // 加入队列
             var queuedCount = await GetQueuedCountAsync(cancellationToken);
-            session.QueuePosition = queuedCount;
-            session.Status = SessionStatus.Queued;
             await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
             var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
-            entity?.UpdateFromModel(session);
-            await context.SaveChangesAsync(cancellationToken);
-            _logger?.LogInformation("Session {SessionId} queued at position {Position}", sessionId, session.QueuePosition);
+            if (entity != null)
+            {
+                entity.QueuePosition = queuedCount;
+                entity.Status = SessionStatus.Queued;
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            _logger?.LogInformation("Session {SessionId} queued at position {Position}", sessionId, queuedCount);
         }
 
-        return session;
+        // 返回最新状态
+        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            return entity!.ToModel();
+        }
     }
 
     public async Task<IEnumerable<SessionInfo>> GetAllSessionsAsync(CancellationToken cancellationToken = default)
@@ -179,7 +201,7 @@ public class SessionService : ISessionService
         return entities.Select(e => e.ToModel()).ToList();
     }
 
-    public async Task<SessionInfo?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo?> GetSessionAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
@@ -190,7 +212,7 @@ public class SessionService : ISessionService
         return entity.ToModel();
     }
 
-    public async Task DestroySessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task DestroySessionAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         string? containerId = null;
 
@@ -222,7 +244,7 @@ public class SessionService : ISessionService
         }
     }
 
-    public async Task UpdateSessionActivityAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task UpdateSessionActivityAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
@@ -248,11 +270,11 @@ public class SessionService : ISessionService
             entity.Status = SessionStatus.Destroyed;
             entity.ContainerId = null;
             await context.SaveChangesAsync(cancellationToken);
-            _logger?.LogInformation("Container {ContainerId} deleted, session {SessionId} marked as destroyed", containerId[..12], entity.SessionId);
+            _logger?.LogInformation("Container {ContainerId} deleted, session {SessionId} marked as destroyed", containerId[..12], entity.Id);
         }
     }
 
-    public async Task IncrementCommandCountAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task IncrementCommandCountAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
@@ -264,7 +286,7 @@ public class SessionService : ISessionService
         }
     }
 
-    public async Task SetExecutingCommandAsync(string sessionId, bool isExecuting, CancellationToken cancellationToken = default)
+    public async Task SetExecutingCommandAsync(int sessionId, bool isExecuting, CancellationToken cancellationToken = default)
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
@@ -323,20 +345,20 @@ public class SessionService : ISessionService
             {
                 // 重新获取最新状态
                 await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-                var entity = await context.Sessions.FindAsync([queuedEntity.SessionId], cancellationToken);
+                var entity = await context.Sessions.FindAsync([queuedEntity.Id], cancellationToken);
                 if (entity == null || entity.Status != SessionStatus.Queued)
                 {
                     continue;
                 }
 
-                var container = await _poolService.AcquireContainerAsync(entity.SessionId, cancellationToken);
+                var container = await _poolService.AcquireContainerAsync(entity.Id, cancellationToken);
                 if (container != null)
                 {
                     entity.ContainerId = container.ContainerId;
                     entity.Status = SessionStatus.Active;
                     entity.QueuePosition = 0;
                     await context.SaveChangesAsync(cancellationToken);
-                    _logger?.LogInformation("Queued session {SessionId} acquired container {ContainerId}", entity.SessionId, container.ShortId);
+                    _logger?.LogInformation("Queued session {SessionId} acquired container {ContainerId}", entity.Id, container.ShortId);
                     promoted = true;
                 }
                 else

@@ -19,12 +19,12 @@ public interface IDockerPoolService
     /// <summary>
     /// 获取一个可用容器分配给会话（使用默认资源限制）
     /// </summary>
-    Task<ContainerInfo?> AcquireContainerAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task<ContainerInfo?> AcquireContainerAsync(int sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取一个可用容器分配给会话（指定资源限制和网络模式）
     /// </summary>
-    Task<ContainerInfo?> AcquireContainerAsync(string sessionId, ResourceLimits resourceLimits, NetworkMode networkMode, CancellationToken cancellationToken = default);
+    Task<ContainerInfo?> AcquireContainerAsync(int sessionId, ResourceLimits resourceLimits, NetworkMode networkMode, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 释放容器（销毁）
@@ -130,13 +130,13 @@ public class DockerPoolService : IDockerPoolService
         NotifyStatusChanged();
     }
 
-    public Task<ContainerInfo?> AcquireContainerAsync(string sessionId, CancellationToken cancellationToken = default)
+    public Task<ContainerInfo?> AcquireContainerAsync(int sessionId, CancellationToken cancellationToken = default)
     {
         // 使用默认资源限制和网络模式（预热容器使用默认配置）
         return AcquireContainerAsync(sessionId, _config.DefaultResourceLimits, _config.DefaultNetworkMode, cancellationToken);
     }
 
-    public async Task<ContainerInfo?> AcquireContainerAsync(string sessionId, ResourceLimits resourceLimits, NetworkMode networkMode, CancellationToken cancellationToken = default)
+    public async Task<ContainerInfo?> AcquireContainerAsync(int sessionId, ResourceLimits resourceLimits, NetworkMode networkMode, CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken);
         try

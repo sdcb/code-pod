@@ -66,15 +66,15 @@ public class SessionCleanupService : ISessionCleanupService
             if (now - session.LastActivityAt > timeout)
             {
                 _logger?.LogInformation("Session {SessionId} expired (timeout: {Timeout}s, last activity: {LastActivity})",
-                    session.SessionId, timeoutSeconds, session.LastActivityAt);
+                    session.Id, timeoutSeconds, session.LastActivityAt);
 
                 try
                 {
-                    await _sessionService.DestroySessionAsync(session.SessionId, cancellationToken);
+                    await _sessionService.DestroySessionAsync(session.Id, cancellationToken);
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Failed to cleanup expired session {SessionId}", session.SessionId);
+                    _logger?.LogError(ex, "Failed to cleanup expired session {SessionId}", session.Id);
                 }
             }
         }

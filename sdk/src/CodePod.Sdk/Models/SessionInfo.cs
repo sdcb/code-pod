@@ -53,9 +53,9 @@ public class SessionOptions
 public class SessionInfo
 {
     /// <summary>
-    /// 会话ID
+    /// 会话ID（自增主键）
     /// </summary>
-    public required string SessionId { get; init; }
+    public int Id { get; set; }
 
     /// <summary>
     /// 会话名称

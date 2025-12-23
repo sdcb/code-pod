@@ -54,9 +54,9 @@ public class DockerOperationException : Exception
 /// </summary>
 public class SessionNotFoundException : Exception
 {
-    public string SessionId { get; }
+    public int SessionId { get; }
 
-    public SessionNotFoundException(string sessionId)
+    public SessionNotFoundException(int sessionId)
         : base($"Session {sessionId} not found")
     {
         SessionId = sessionId;
@@ -68,9 +68,9 @@ public class SessionNotFoundException : Exception
 /// </summary>
 public class SessionNotReadyException : Exception
 {
-    public string SessionId { get; }
+    public int SessionId { get; }
 
-    public SessionNotReadyException(string sessionId)
+    public SessionNotReadyException(int sessionId)
         : base($"Session {sessionId} is not ready (no container assigned)")
     {
         SessionId = sessionId;

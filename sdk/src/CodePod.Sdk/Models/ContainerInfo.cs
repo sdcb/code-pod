@@ -74,7 +74,7 @@ public class ContainerInfo
     /// <summary>
     /// 关联的会话ID
     /// </summary>
-    public string? SessionId { get; set; }
+    public int? SessionId { get; set; }
 
     /// <summary>
     /// 容器标签

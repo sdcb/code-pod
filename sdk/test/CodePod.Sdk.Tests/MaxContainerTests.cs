@@ -38,7 +38,7 @@ public class MaxContainerTests : TestBase
     [Fact]
     public async Task MaxContainers_WhenReached_SessionsAreQueued()
     {
-        var createdSessions = new List<string>();
+        var createdSessions = new List<int>();
 
         try
         {
@@ -46,7 +46,7 @@ public class MaxContainerTests : TestBase
             for (int i = 0; i < Config.MaxContainers; i++)
             {
                 var session = await Client.CreateSessionAsync($"Session-{i + 1}");
-                createdSessions.Add(session.SessionId);
+                createdSessions.Add(session.Id);
                 await Task.Delay(500); // 给容器创建一些时间
             }
 
@@ -65,7 +65,7 @@ public class MaxContainerTests : TestBase
 
             // Act - 创建第 N+1 个会话
             var queuedSession = await Client.CreateSessionAsync("Queued-Session");
-            createdSessions.Add(queuedSession.SessionId);
+            createdSessions.Add(queuedSession.Id);
 
             // 检查状态
             var status = await Client.GetStatusAsync();
@@ -98,7 +98,7 @@ public class MaxContainerTests : TestBase
     [Fact]
     public async Task QueuedSession_GetsContainerWhenReleased()
     {
-        var createdSessions = new List<string>();
+        var createdSessions = new List<int>();
 
         try
         {
@@ -106,7 +106,7 @@ public class MaxContainerTests : TestBase
             for (int i = 0; i < Config.MaxContainers; i++)
             {
                 var session = await Client.CreateSessionAsync($"Fill-Session-{i + 1}");
-                createdSessions.Add(session.SessionId);
+                createdSessions.Add(session.Id);
                 await Task.Delay(500);
             }
 
@@ -115,7 +115,7 @@ public class MaxContainerTests : TestBase
 
             // 创建一个应该被排队的会话
             var queuedSession = await Client.CreateSessionAsync("Should-Be-Queued");
-            createdSessions.Add(queuedSession.SessionId);
+            createdSessions.Add(queuedSession.Id);
 
             // 如果会话被排队
             if (queuedSession.Status == Models.SessionStatus.Queued)
@@ -128,13 +128,13 @@ public class MaxContainerTests : TestBase
                 await Task.Delay(5000);
 
                 // Assert - 检查排队的会话是否获得了容器
-                var updatedSession = await Client.GetSessionAsync(queuedSession.SessionId);
+                var updatedSession = await Client.GetSessionAsync(queuedSession.Id);
                 
                 // 多次重试检查
                 for (int retry = 0; retry < 10 && string.IsNullOrEmpty(updatedSession.ContainerId); retry++)
                 {
                     await Task.Delay(1000);
-                    updatedSession = await Client.GetSessionAsync(queuedSession.SessionId);
+                    updatedSession = await Client.GetSessionAsync(queuedSession.Id);
                 }
 
                 if (updatedSession.Status == Models.SessionStatus.Active)

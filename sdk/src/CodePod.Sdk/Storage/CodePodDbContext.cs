@@ -29,7 +29,6 @@ public class CodePodDbContext : DbContext
             entity.Property(e => e.Image).HasMaxLength(256).IsRequired();
             entity.Property(e => e.DockerStatus).HasMaxLength(64).IsRequired();
             entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
-            entity.Property(e => e.SessionId).HasMaxLength(64);
             entity.Property(e => e.LabelsJson).HasColumnName("Labels");
 
             entity.HasIndex(e => e.Status);
@@ -39,8 +38,8 @@ public class CodePodDbContext : DbContext
         // Session 实体配置
         modelBuilder.Entity<SessionEntity>(entity =>
         {
-            entity.HasKey(e => e.SessionId);
-            entity.Property(e => e.SessionId).HasMaxLength(64);
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
             entity.Property(e => e.Name).HasMaxLength(256);
             entity.Property(e => e.ContainerId).HasMaxLength(64);
             entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
@@ -66,7 +65,7 @@ public class ContainerEntity
     public ContainerStatus Status { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
-    public string? SessionId { get; set; }
+    public int? SessionId { get; set; }
 
     /// <summary>
     /// Labels 的 JSON 序列化存储
@@ -131,7 +130,7 @@ public class ContainerEntity
 /// </summary>
 public class SessionEntity
 {
-    public required string SessionId { get; set; }
+    public int Id { get; set; }
     public string? Name { get; set; }
     public string? ContainerId { get; set; }
     public SessionStatus Status { get; set; }
@@ -159,7 +158,7 @@ public class SessionEntity
 
         return new SessionInfo
         {
-            SessionId = SessionId,
+            Id = Id,
             Name = Name,
             ContainerId = ContainerId,
             Status = Status,
@@ -181,7 +180,7 @@ public class SessionEntity
     {
         return new SessionEntity
         {
-            SessionId = model.SessionId,
+            Id = model.Id,
             Name = model.Name,
             ContainerId = model.ContainerId,
             Status = model.Status,

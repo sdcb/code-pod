@@ -49,7 +49,7 @@ public abstract class TestBase : IAsyncLifetime
             {
                 try
                 {
-                    await Client.DestroySessionAsync(session.SessionId);
+                    await Client.DestroySessionAsync(session.Id);
                 }
                 catch
                 {
@@ -74,7 +74,7 @@ public abstract class TestBase : IAsyncLifetime
     /// <summary>
     /// 等待会话就绪（获取到容器）
     /// </summary>
-    protected async Task<Models.SessionInfo> WaitForSessionReadyAsync(string sessionId, int maxWaitSeconds = 30)
+    protected async Task<Models.SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {
