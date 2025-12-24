@@ -15,6 +15,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     private readonly ITestOutputHelper _output;
     private CodePodClient _client = null!;
     private ILoggerFactory _loggerFactory = null!;
+    private bool _isWindowsContainer;
 
     public ResourceLimitsTests(ITestOutputHelper output)
     {
@@ -29,13 +30,20 @@ public class ResourceLimitsTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
+        var settings = TestSettings.Load();
+        _isWindowsContainer = settings.IsWindowsContainer;
+        var workDir = _isWindowsContainer ? "C:\\app" : "/app";
+        var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
+
         var config = new CodePodConfig
         {
-            Image = "mcr.microsoft.com/dotnet/sdk:10.0",
+            DockerEndpoint = settings.DockerEndpoint,
+            IsWindowsContainer = _isWindowsContainer,
+            Image = image,
             PrewarmCount = 0, // 不预热，便于测试自定义资源限制
             MaxContainers = 10,
             SessionTimeoutSeconds = 300,
-            WorkDir = "/app",
+            WorkDir = workDir,
             LabelPrefix = "codepod-reslimit-test",
             // 系统最大资源限制
             MaxResourceLimits = new ResourceLimits
@@ -212,10 +220,11 @@ public class ResourceLimitsTests : IAsyncLifetime
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试创建多个子进程（可能会达到限制）
-        var result = await _client.ExecuteCommandAsync(
-            session.Id,
-            "for i in $(seq 1 5); do echo $i; done",
-            timeoutSeconds: 30);
+        var command = _isWindowsContainer
+            ? "1..5 | ForEach-Object { Write-Output $_ }"
+            : "for i in $(seq 1 5); do echo $i; done";
+
+        var result = await _client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
 
         // Assert
         _output.WriteLine($"Exit code: {result.ExitCode}");

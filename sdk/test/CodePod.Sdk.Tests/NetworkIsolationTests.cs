@@ -15,6 +15,7 @@ public class NetworkIsolationTests : IAsyncLifetime
     private readonly ITestOutputHelper _output;
     private CodePodClient _client = null!;
     private ILoggerFactory _loggerFactory = null!;
+    private bool _isWindowsContainer;
 
     public NetworkIsolationTests(ITestOutputHelper output)
     {
@@ -29,13 +30,20 @@ public class NetworkIsolationTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
+        var settings = TestSettings.Load();
+        _isWindowsContainer = settings.IsWindowsContainer;
+        var workDir = _isWindowsContainer ? "C:\\app" : "/app";
+        var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
+
         var config = new CodePodConfig
         {
-            Image = "mcr.microsoft.com/dotnet/sdk:10.0",
+            DockerEndpoint = settings.DockerEndpoint,
+            IsWindowsContainer = _isWindowsContainer,
+            Image = image,
             PrewarmCount = 0, // 不预热
             MaxContainers = 10,
             SessionTimeoutSeconds = 300,
-            WorkDir = "/app",
+            WorkDir = workDir,
             LabelPrefix = "codepod-network-test",
             DefaultNetworkMode = NetworkMode.None // 默认禁用网络
         };
@@ -74,6 +82,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     [Fact]
     public async Task NetworkMode_None_BlocksNetworkAccess()
     {
+        // Windows containers do not support network isolation modes
+        if (_isWindowsContainer) return;
+
         // Arrange
         var options = new SessionOptions
         {
@@ -103,6 +114,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     [Fact]
     public async Task NetworkMode_None_LocalhostAlsoBlocked()
     {
+        // Windows containers do not support network isolation modes
+        if (_isWindowsContainer) return;
+
         // Arrange
         var options = new SessionOptions
         {
@@ -133,6 +147,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     [Fact]
     public async Task NetworkMode_Bridge_AllowsNetworkAccess()
     {
+        // Windows containers do not support network isolation modes
+        if (_isWindowsContainer) return;
+
         // Arrange
         var options = new SessionOptions
         {
@@ -162,6 +179,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     [Fact]
     public async Task NetworkMode_Bridge_HasEthInterface()
     {
+        // Windows containers do not support network isolation modes
+        if (_isWindowsContainer) return;
+
         // Arrange
         var options = new SessionOptions
         {
@@ -193,6 +213,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     [Fact]
     public async Task DefaultSession_UsesConfiguredNetworkMode()
     {
+        // Windows containers do not support network isolation modes
+        if (_isWindowsContainer) return;
+
         // Arrange - 客户端配置默认使用 None
         var session = await _client.CreateSessionAsync("默认网络模式测试");
         await WaitForSessionReadyAsync(session.Id);
@@ -216,6 +239,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     [Fact]
     public async Task NetworkMode_CanBeOverriddenPerSession()
     {
+        // Windows containers do not support network isolation modes
+        if (_isWindowsContainer) return;
+
         // 测试 1: 创建 None 模式会话
         var sessionNone = await _client.CreateSessionAsync(new SessionOptions
         {

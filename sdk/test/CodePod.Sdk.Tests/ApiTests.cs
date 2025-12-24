@@ -145,10 +145,10 @@ public class ApiTests : TestBase
         var bytes = Encoding.UTF8.GetBytes(content);
 
         // Act
-        await Client.UploadFileAsync(session.Id, "/app/test.txt", bytes);
+        await Client.UploadFileAsync(session.Id, GetWorkPath("test.txt"), bytes);
 
         // Assert - 验证文件存在
-        var files = await Client.ListDirectoryAsync(session.Id, "/app");
+        var files = await Client.ListDirectoryAsync(session.Id, WorkDir);
         Assert.Contains(files, f => f.Name == "test.txt");
     }
 
@@ -159,10 +159,10 @@ public class ApiTests : TestBase
         var session = await Client.CreateSessionAsync("列目录测试");
         await WaitForSessionReadyAsync(session.Id);
         var content = "test content";
-        await Client.UploadFileAsync(session.Id, "/app/listtest.txt", Encoding.UTF8.GetBytes(content));
+        await Client.UploadFileAsync(session.Id, GetWorkPath("listtest.txt"), Encoding.UTF8.GetBytes(content));
 
         // Act
-        var files = await Client.ListDirectoryAsync(session.Id, "/app");
+        var files = await Client.ListDirectoryAsync(session.Id, WorkDir);
 
         // Assert
         Assert.NotEmpty(files);
@@ -176,10 +176,10 @@ public class ApiTests : TestBase
         var session = await Client.CreateSessionAsync("下载文件测试");
         await WaitForSessionReadyAsync(session.Id);
         var originalContent = "Hello, this is a test file!\n测试中文内容";
-        await Client.UploadFileAsync(session.Id, "/app/download.txt", Encoding.UTF8.GetBytes(originalContent));
+        await Client.UploadFileAsync(session.Id, GetWorkPath("download.txt"), Encoding.UTF8.GetBytes(originalContent));
 
         // Act
-        var downloadedBytes = await Client.DownloadFileAsync(session.Id, "/app/download.txt");
+        var downloadedBytes = await Client.DownloadFileAsync(session.Id, GetWorkPath("download.txt"));
         var downloadedContent = Encoding.UTF8.GetString(downloadedBytes);
 
         // Assert
@@ -193,13 +193,13 @@ public class ApiTests : TestBase
         // Arrange
         var session = await Client.CreateSessionAsync("删除文件测试");
         await WaitForSessionReadyAsync(session.Id);
-        await Client.UploadFileAsync(session.Id, "/app/todelete.txt", Encoding.UTF8.GetBytes("delete me"));
+        await Client.UploadFileAsync(session.Id, GetWorkPath("todelete.txt"), Encoding.UTF8.GetBytes("delete me"));
 
         // Act
-        await Client.DeleteFileAsync(session.Id, "/app/todelete.txt");
+        await Client.DeleteFileAsync(session.Id, GetWorkPath("todelete.txt"));
 
         // Assert
-        var files = await Client.ListDirectoryAsync(session.Id, "/app");
+        var files = await Client.ListDirectoryAsync(session.Id, WorkDir);
         Assert.DoesNotContain(files, f => f.Name == "todelete.txt");
     }
 

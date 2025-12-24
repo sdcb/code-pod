@@ -116,21 +116,22 @@ public class PerformanceTests : TestBase
                 Assert.Equal(0, result.ExitCode);
 
                 // 3. 上传一个文件
+                var filePath = GetWorkPath("perf-test.txt");
                 await Client.UploadFileAsync(
                     session.Id,
-                    "/app/perf-test.txt",
+                    filePath,
                     "Performance test content"u8.ToArray());
 
                 // 4. 列出目录
-                var files = await Client.ListDirectoryAsync(session.Id, "/app");
+                var files = await Client.ListDirectoryAsync(session.Id, WorkDir);
                 Assert.Contains(files, f => f.Name == "perf-test.txt");
 
                 // 5. 下载文件
-                var downloaded = await Client.DownloadFileAsync(session.Id, "/app/perf-test.txt");
+                var downloaded = await Client.DownloadFileAsync(session.Id, filePath);
                 Assert.NotEmpty(downloaded);
 
                 // 6. 删除文件
-                await Client.DeleteFileAsync(session.Id, "/app/perf-test.txt");
+                await Client.DeleteFileAsync(session.Id, filePath);
 
                 // 7. 销毁会话
                 await Client.DestroySessionAsync(session.Id);

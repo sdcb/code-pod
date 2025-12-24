@@ -15,6 +15,7 @@ public class OutputTruncationTests : IAsyncLifetime
     private readonly ITestOutputHelper _output;
     private CodePodClient _client = null!;
     private ILoggerFactory _loggerFactory = null!;
+    private bool _isWindowsContainer;
 
     public OutputTruncationTests(ITestOutputHelper output)
     {
@@ -29,13 +30,20 @@ public class OutputTruncationTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
+        var settings = TestSettings.Load();
+        _isWindowsContainer = settings.IsWindowsContainer;
+        var workDir = _isWindowsContainer ? "C:\\app" : "/app";
+        var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
+
         var config = new CodePodConfig
         {
-            Image = "mcr.microsoft.com/dotnet/sdk:10.0",
+            DockerEndpoint = settings.DockerEndpoint,
+            IsWindowsContainer = _isWindowsContainer,
+            Image = image,
             PrewarmCount = 2,
             MaxContainers = 10,
             SessionTimeoutSeconds = 300,
-            WorkDir = "/app",
+            WorkDir = workDir,
             LabelPrefix = "codepod-truncation-test",
             OutputOptions = new OutputOptions
             {
@@ -104,9 +112,11 @@ public class OutputTruncationTests : IAsyncLifetime
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量输出 (超过 1KB)
-        var result = await _client.ExecuteCommandAsync(
-            session.Id,
-            "for i in $(seq 1 500); do echo \"Line $i: This is a test line to generate large output\"; done");
+        var command = _isWindowsContainer
+            ? "1..500 | ForEach-Object { Write-Output (\"Line {0}: This is a test line to generate large output\" -f $_) }"
+            : "for i in $(seq 1 500); do echo \"Line $i: This is a test line to generate large output\"; done";
+
+        var result = await _client.ExecuteCommandAsync(session.Id, command);
 
         // Assert
         Assert.Equal(0, result.ExitCode);
@@ -130,9 +140,11 @@ public class OutputTruncationTests : IAsyncLifetime
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量输出
-        var result = await _client.ExecuteCommandAsync(
-            session.Id,
-            "seq 1 1000");
+        var command = _isWindowsContainer
+            ? "1..1000 | ForEach-Object { $_ }"
+            : "seq 1 1000";
+
+        var result = await _client.ExecuteCommandAsync(session.Id, command);
 
         // Assert
         if (result.IsTruncated)
@@ -151,9 +163,11 @@ public class OutputTruncationTests : IAsyncLifetime
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量 stderr 输出
-        var result = await _client.ExecuteCommandAsync(
-            session.Id,
-            "for i in $(seq 1 500); do echo \"Error line $i\" >&2; done");
+        var command = _isWindowsContainer
+            ? "1..500 | ForEach-Object { [Console]::Error.WriteLine((\"Error line {0}\" -f $_)) }"
+            : "for i in $(seq 1 500); do echo \"Error line $i\" >&2; done";
+
+        var result = await _client.ExecuteCommandAsync(session.Id, command);
 
         // Assert
         // stderr 也应该被截断
@@ -174,9 +188,11 @@ public class OutputTruncationTests : IAsyncLifetime
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成有特定开头和结尾的输出
-        var result = await _client.ExecuteCommandAsync(
-            session.Id,
-            "echo '=== START ===' && for i in $(seq 1 500); do echo \"Middle line $i\"; done && echo '=== END ==='");
+        var command = _isWindowsContainer
+            ? "Write-Output '=== START ==='; 1..500 | ForEach-Object { Write-Output (\"Middle line {0}\" -f $_) }; Write-Output '=== END ==='"
+            : "echo '=== START ===' && for i in $(seq 1 500); do echo \"Middle line $i\"; done && echo '=== END ==='";
+
+        var result = await _client.ExecuteCommandAsync(session.Id, command);
 
         // Assert
         Assert.Equal(0, result.ExitCode);

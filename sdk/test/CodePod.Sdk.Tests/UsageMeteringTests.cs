@@ -15,6 +15,7 @@ public class UsageMeteringTests : IAsyncLifetime
     private readonly ITestOutputHelper _output;
     private CodePodClient _client = null!;
     private ILoggerFactory _loggerFactory = null!;
+    private bool _isWindowsContainer;
 
     public UsageMeteringTests(ITestOutputHelper output)
     {
@@ -29,13 +30,20 @@ public class UsageMeteringTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
+        var settings = TestSettings.Load();
+        _isWindowsContainer = settings.IsWindowsContainer;
+        var workDir = _isWindowsContainer ? "C:\\app" : "/app";
+        var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
+
         var config = new CodePodConfig
         {
-            Image = "mcr.microsoft.com/dotnet/sdk:10.0",
+            DockerEndpoint = settings.DockerEndpoint,
+            IsWindowsContainer = _isWindowsContainer,
+            Image = image,
             PrewarmCount = 2,
             MaxContainers = 10,
             SessionTimeoutSeconds = 300,
-            WorkDir = "/app",
+            WorkDir = workDir,
             LabelPrefix = "codepod-metering-test"
         };
 
@@ -137,10 +145,11 @@ public class UsageMeteringTests : IAsyncLifetime
         var usageBefore = await _client.GetSessionUsageAsync(session.Id);
 
         // 执行内存密集型工作（创建大文件）
-        await _client.ExecuteCommandAsync(
-            session.Id, 
-            "dd if=/dev/zero of=/tmp/testfile bs=1M count=10 2>/dev/null && rm /tmp/testfile",
-            timeoutSeconds: 30);
+        var command = _isWindowsContainer
+            ? "$p = Join-Path $PWD 'testfile.bin'; $bytes = New-Object byte[] (10MB); [IO.File]::WriteAllBytes($p, $bytes); Remove-Item -Force $p"
+            : "dd if=/dev/zero of=/tmp/testfile bs=1M count=10 2>/dev/null && rm /tmp/testfile";
+
+        await _client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
 
         // 获取工作后的使用量
         var usageAfter = await _client.GetSessionUsageAsync(session.Id);

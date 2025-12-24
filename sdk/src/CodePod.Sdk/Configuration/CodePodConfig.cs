@@ -1,23 +1,6 @@
-using System.Runtime.InteropServices;
 using CodePod.Sdk.Models;
 
 namespace CodePod.Sdk.Configuration;
-
-/// <summary>
-/// Docker 运行环境类型
-/// </summary>
-public enum DockerEnvironment
-{
-    /// <summary>
-    /// Linux 容器（默认）
-    /// </summary>
-    Linux,
-
-    /// <summary>
-    /// Windows 容器
-    /// </summary>
-    Windows
-}
 
 /// <summary>
 /// CodePod SDK 配置
@@ -25,9 +8,9 @@ public enum DockerEnvironment
 public class CodePodConfig
 {
     /// <summary>
-    /// Docker 运行环境（linux/windows），默认 Linux
+    /// 是否使用 Windows 容器（默认 false，使用 Linux 容器）
     /// </summary>
-    public DockerEnvironment DockerEnvironment { get; set; } = DockerEnvironment.Linux;
+    public bool IsWindowsContainer { get; set; }
 
     /// <summary>
     /// Docker 服务端点地址。
@@ -48,18 +31,11 @@ public class CodePodConfig
             return new Uri(DockerEndpoint);
         }
 
-        // 根据操作系统选择默认值
-        var uri = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "npipe://./pipe/docker_engine"
-            : "unix:///var/run/docker.sock";
-
-        return new Uri(uri);
+        // 不依赖当前宿主机操作系统；仅基于配置的容器平台做默认选择
+        return IsWindowsContainer
+            ? new Uri("npipe://./pipe/docker_engine")
+            : new Uri("unix:///var/run/docker.sock");
     }
-
-    /// <summary>
-    /// 判断是否为 Windows 容器环境
-    /// </summary>
-    public bool IsWindowsContainer => DockerEnvironment == DockerEnvironment.Windows;
 
     /// <summary>
     /// 获取用于执行命令的 shell 命令数组
@@ -69,7 +45,7 @@ public class CodePodConfig
     public string[] GetShellCommand(string command)
     {
         return IsWindowsContainer
-            ? ["pwsh", "-c", command]
+            ? ["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
             : ["/bin/bash", "-lc", command];
     }
 

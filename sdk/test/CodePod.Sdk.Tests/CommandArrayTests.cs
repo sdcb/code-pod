@@ -15,6 +15,8 @@ public class CommandArrayTests : IAsyncLifetime
     private readonly ITestOutputHelper _output;
     private CodePodClient _client = null!;
     private ILoggerFactory _loggerFactory = null!;
+    private bool _isWindowsContainer;
+    private string _workDir = "/app";
 
     public CommandArrayTests(ITestOutputHelper output)
     {
@@ -29,13 +31,21 @@ public class CommandArrayTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
+        var settings = TestSettings.Load();
+        _isWindowsContainer = settings.IsWindowsContainer;
+        _workDir = _isWindowsContainer ? "C:\\app" : "/app";
+
+        var image = _isWindowsContainer ? settings.PythonWindowsImage : settings.PythonLinuxImage;
+
         var config = new CodePodConfig
         {
-            Image = "python:3.12-slim", // 使用 Python 镜像来测试命令数组
+            DockerEndpoint = settings.DockerEndpoint,
+            IsWindowsContainer = _isWindowsContainer,
+            Image = image, // 使用 Python 镜像来测试命令数组
             PrewarmCount = 0, // 不预热，每个测试独立
             MaxContainers = 10,
             SessionTimeoutSeconds = 300,
-            WorkDir = "/app",
+            WorkDir = _workDir,
             LabelPrefix = "codepod-cmdarray-test"
         };
 
@@ -80,7 +90,7 @@ public class CommandArrayTests : IAsyncLifetime
         // Act - 使用命令数组
         var result = await _client.ExecuteCommandAsync(
             session.Id,
-            ["echo", "Hello from command array!"]);
+            ["python", "-c", "print('Hello from command array!')"]);
 
         // Assert
         Assert.Equal(0, result.ExitCode);
@@ -98,7 +108,7 @@ public class CommandArrayTests : IAsyncLifetime
         // Act - 包含特殊字符的参数，使用数组形式不需要转义
         var result = await _client.ExecuteCommandAsync(
             session.Id,
-            ["echo", "Hello \"World\" with 'quotes' and $variables"]);
+            ["python", "-c", "print(\"Hello \\\"World\\\" with 'quotes' and $variables\")"]);
 
         // Assert
         Assert.Equal(0, result.ExitCode);
@@ -155,18 +165,20 @@ public class CommandArrayTests : IAsyncLifetime
         var session = await _client.CreateSessionAsync("工作目录测试");
         await WaitForSessionReadyAsync(session.Id);
 
-        // 先创建目录
-        await _client.ExecuteCommandAsync(session.Id, "mkdir -p /tmp/testdir");
+        var targetDir = GetWorkPath("testdir");
+        await _client.ExecuteCommandAsync(
+            session.Id,
+            ["python", "-c", $"import os; os.makedirs(r\"{EscapeForPythonRawString(targetDir)}\", exist_ok=True)"]);
 
         // Act - 在指定目录执行命令数组
         var result = await _client.ExecuteCommandAsync(
             session.Id,
-            ["pwd"],
-            workingDirectory: "/tmp/testdir");
+            ["python", "-c", "import os; print(os.getcwd())"],
+            workingDirectory: targetDir);
 
         // Assert
         Assert.Equal(0, result.ExitCode);
-        Assert.Contains("/tmp/testdir", result.Stdout);
+        Assert.Contains("testdir", result.Stdout, StringComparison.OrdinalIgnoreCase);
         _output.WriteLine($"Working directory: {result.Stdout.Trim()}");
     }
 
@@ -181,7 +193,7 @@ public class CommandArrayTests : IAsyncLifetime
         var outputs = new List<string>();
         await foreach (var evt in _client.ExecuteCommandStreamAsync(
             session.Id,
-            ["bash", "-c", "for i in 1 2 3; do echo Line$i; done"]))
+            ["python", "-c", "for i in range(1,4): print(f'Line{i}')"]))
         {
             if (evt.Type == CommandOutputType.Stdout)
             {
@@ -238,18 +250,32 @@ print(json.dumps(data, indent=2))
         // 方式1: 字符串（需要转义）
         var resultString = await _client.ExecuteCommandAsync(
             session.Id,
-            "echo 'Hello World'");
+            "python -c \"print('Hello World')\"");
 
         // 方式2: 数组（不需要转义）
         var resultArray = await _client.ExecuteCommandAsync(
             session.Id,
-            ["echo", "Hello World"]);
+            ["python", "-c", "print('Hello World')"]);
 
         // Assert - 两种方式结果应该相同
         _output.WriteLine($"String: {resultString.Stdout.Trim()}");
         _output.WriteLine($"Array: {resultArray.Stdout.Trim()}");
         
         Assert.Equal(resultString.Stdout.Trim(), resultArray.Stdout.Trim());
+    }
+
+    private string GetWorkPath(string relativePath)
+    {
+        relativePath = relativePath.TrimStart('\\', '/');
+        var separator = _isWindowsContainer ? "\\" : "/";
+        return _workDir.TrimEnd('\\', '/') + separator + relativePath.Replace("/", separator).Replace("\\", separator);
+    }
+
+    private static string EscapeForPythonRawString(string value)
+    {
+        // Python raw strings can't end with a single backslash; ensure we don't produce that pattern.
+        // For our test paths, this is sufficient.
+        return value.Replace("\"", "\\\"");
     }
 
     private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)

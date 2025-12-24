@@ -44,7 +44,7 @@ public class SessionTimeoutTests : TestBase
         await Task.Delay(1000);
 
         // Act
-        await Client.UploadFileAsync(session.Id, "/app/timeout-test.txt", "Hello, World!"u8.ToArray());
+        await Client.UploadFileAsync(session.Id, GetWorkPath("timeout-test.txt"), "Hello, World!"u8.ToArray());
 
         // Assert
         var updatedSession = await Client.GetSessionAsync(session.Id);
@@ -62,7 +62,7 @@ public class SessionTimeoutTests : TestBase
         await Task.Delay(1000);
 
         // Act
-        await Client.ListDirectoryAsync(session.Id, "/app");
+        await Client.ListDirectoryAsync(session.Id, WorkDir);
 
         // Assert
         var updatedSession = await Client.GetSessionAsync(session.Id);
@@ -77,13 +77,14 @@ public class SessionTimeoutTests : TestBase
         await WaitForSessionReadyAsync(session.Id);
         
         // 先上传一个文件
-        await Client.UploadFileAsync(session.Id, "/app/download-timeout.txt", "test content"u8.ToArray());
+        var downloadPath = GetWorkPath("download-timeout.txt");
+        await Client.UploadFileAsync(session.Id, downloadPath, "test content"u8.ToArray());
         
         var initialLastActivity = (await Client.GetSessionAsync(session.Id)).LastActivityAt;
         await Task.Delay(1000);
 
         // Act
-        await Client.DownloadFileAsync(session.Id, "/app/download-timeout.txt");
+        await Client.DownloadFileAsync(session.Id, downloadPath);
 
         // Assert
         var updatedSession = await Client.GetSessionAsync(session.Id);
@@ -94,13 +95,18 @@ public class SessionTimeoutTests : TestBase
     public async Task SessionTimeout_DestroysSessionAndContainer()
     {
         // 使用非常短的超时来测试
+        var settings = TestSettings.Load();
+        var isWindowsContainer = settings.IsWindowsContainer;
+
         var shortTimeoutConfig = new Configuration.CodePodConfig
         {
+            IsWindowsContainer = isWindowsContainer,
+            DockerEndpoint = settings.DockerEndpoint,
             Image = Config.Image,
             PrewarmCount = 1,
             MaxContainers = 5,
             SessionTimeoutSeconds = 5, // 5秒超时
-            WorkDir = "/app",
+            WorkDir = isWindowsContainer ? "C:\\app" : "/app",
             LabelPrefix = "codepod-timeout-test"
         };
 

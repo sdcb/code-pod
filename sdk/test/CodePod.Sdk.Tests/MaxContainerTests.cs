@@ -10,20 +10,24 @@ public class MaxContainerTests : TestBase
 {
     public override async Task InitializeAsync()
     {
-        // 使用较小的容器限制来测试
         LoggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
         {
             builder.AddConsole();
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
+        var settings = TestSettings.Load();
+        var isWindowsContainer = settings.IsWindowsContainer;
+
         Config = new Configuration.CodePodConfig
         {
-            Image = "mcr.microsoft.com/dotnet/sdk:10.0",
+            IsWindowsContainer = isWindowsContainer,
+            DockerEndpoint = settings.DockerEndpoint,
+            Image = isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage,
             PrewarmCount = 1,
-            MaxContainers = 3, // 较小的限制便于测试
+            MaxContainers = 3,
             SessionTimeoutSeconds = 300,
-            WorkDir = "/app",
+            WorkDir = isWindowsContainer ? "C:\\app" : "/app",
             LabelPrefix = "codepod-maxtest"
         };
 
