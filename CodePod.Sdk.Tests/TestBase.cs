@@ -1,5 +1,6 @@
 using CodePod.Sdk.Configuration;
 using Microsoft.Extensions.Logging;
+using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
 
 namespace CodePod.Sdk.Tests;
@@ -22,20 +23,7 @@ public abstract class TestBase : IAsyncLifetime
         });
 
         var settings = TestSettings.Load();
-        var isWindowsContainer = settings.IsWindowsContainer;
-
-        Config = new CodePodConfig
-        {
-            IsWindowsContainer = isWindowsContainer,
-            DockerEndpoint = settings.DockerEndpoint,
-            Image = isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage,
-            PrewarmCount = 2,
-            MaxContainers = 10,
-            SessionTimeoutSeconds = 1800,
-            // Windows 容器使用 Windows 路径
-            WorkDir = isWindowsContainer ? "C:\\app" : "/app",
-            LabelPrefix = "codepod-test"
-        };
+        Config = CodePodTestSupport.CreateDefaultConfig(settings);
 
         Client = new CodePodClientBuilder()
             .WithConfig(Config)
@@ -86,19 +74,7 @@ public abstract class TestBase : IAsyncLifetime
     /// 等待会话就绪（获取到容器）
     /// </summary>
     protected async Task<Models.SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
-    {
-        for (int i = 0; i < maxWaitSeconds * 2; i++)
-        {
-            var session = await Client.GetSessionAsync(sessionId);
-            if (!string.IsNullOrEmpty(session.ContainerId))
-            {
-                return session;
-            }
-            await Task.Delay(500);
-        }
-
-        throw new TimeoutException($"Session {sessionId} did not become ready within {maxWaitSeconds} seconds");
-    }
+        => await CodePodTestSupport.WaitForSessionReadyAsync(Client, sessionId, maxWaitSeconds);
 
     /// <summary>
     /// 检查是否为 Windows 容器模式
@@ -114,38 +90,13 @@ public abstract class TestBase : IAsyncLifetime
     /// 在 WorkDir 下构造文件/目录路径（不依赖宿主机 OS）
     /// </summary>
     protected string GetWorkPath(string relativePath)
-    {
-        var rel = relativePath.TrimStart('/', '\\');
-
-        if (IsWindowsContainer)
-        {
-            rel = rel.Replace('/', '\\');
-            if (string.IsNullOrWhiteSpace(rel))
-            {
-                return WorkDir;
-            }
-
-            return WorkDir.EndsWith("\\", StringComparison.Ordinal)
-                ? WorkDir + rel
-                : WorkDir + "\\" + rel;
-        }
-
-        rel = rel.Replace('\\', '/');
-        if (string.IsNullOrWhiteSpace(rel))
-        {
-            return WorkDir;
-        }
-
-        return WorkDir.EndsWith("/", StringComparison.Ordinal)
-            ? WorkDir + rel
-            : WorkDir + "/" + rel;
-    }
+        => CodePodTestSupport.GetWorkPath(Config, relativePath);
 
     /// <summary>
     /// 获取 echo 命令（跨平台）
     /// </summary>
     protected string GetEchoCommand(string message) =>
-        IsWindowsContainer ? $"Write-Output '{message}'" : $"echo '{message}'";
+        CodePodTestSupport.GetEchoCommand(IsWindowsContainer, message);
 
     /// <summary>
     /// 获取打印多行的命令（跨平台）
@@ -153,35 +104,14 @@ public abstract class TestBase : IAsyncLifetime
     /// Windows (pwsh): 1..3 | ForEach-Object { Write-Output "Line $_" }
     /// </summary>
     protected string GetMultiLineEchoCommand(int lineCount)
-    {
-        if (IsWindowsContainer)
-        {
-            // PowerShell: 使用 ForEach-Object
-            return $"1..{lineCount} | ForEach-Object {{ Write-Output \"Line $_\" }}";
-        }
-        else
-        {
-            return $"for i in $(seq 1 {lineCount}); do echo \"Line $i\"; done";
-        }
-    }
+        => CodePodTestSupport.GetMultiLineEchoCommand(IsWindowsContainer, lineCount);
 
     /// <summary>
     /// 获取带延迟的流式输出命令（跨平台）
     /// 用于测试流式输出
     /// </summary>
     protected string GetStreamingOutputCommand(int lineCount, double delaySeconds = 0.1)
-    {
-        if (IsWindowsContainer)
-        {
-            // PowerShell: 输出到 stdout 和 stderr
-            var delayMs = (int)(delaySeconds * 1000);
-            return $"1..{lineCount} | ForEach-Object {{ Write-Output \"stdout: Line $_\"; Write-Error \"stderr: Warning $_\"; Start-Sleep -Milliseconds {delayMs} }}";
-        }
-        else
-        {
-            return $"for i in $(seq 1 {lineCount}); do echo \"stdout: Line $i\"; echo \"stderr: Warning $i\" >&2; sleep {delaySeconds}; done";
-        }
-    }
+        => CodePodTestSupport.GetStreamingOutputCommand(IsWindowsContainer, lineCount, delaySeconds);
 
     /// <summary>
     /// 获取创建目录命令（跨平台）
