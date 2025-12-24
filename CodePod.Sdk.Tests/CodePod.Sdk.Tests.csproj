@@ -29,7 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\CodePod.Sdk\CodePod.Sdk.csproj" />
+    <ProjectReference Include="..\CodePod.Sdk\CodePod.Sdk.csproj" />
   </ItemGroup>
 
   <ItemGroup>

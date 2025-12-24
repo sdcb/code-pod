@@ -49,6 +49,12 @@ public abstract class TestBase : IAsyncLifetime
     {
         try
         {
+            // 先停止后台任务，防止在清理期间继续创建容器
+            Client.Dispose();
+            
+            // 等待一小段时间，确保后台任务已经停止
+            await Task.Delay(100);
+            
             // 清理所有会话
             var sessions = await Client.GetAllSessionsAsync();
             foreach (var session in sessions)
@@ -63,8 +69,8 @@ public abstract class TestBase : IAsyncLifetime
                 }
             }
 
-            // 清理所有容器
-            await Client.DeleteAllContainersAsync();
+            // 清理所有容器，使用 CancellationToken.None 确保清理一定完成
+            await Client.DeleteAllContainersAsync(CancellationToken.None);
         }
         catch
         {
@@ -72,7 +78,6 @@ public abstract class TestBase : IAsyncLifetime
         }
         finally
         {
-            Client.Dispose();
             LoggerFactory.Dispose();
         }
     }

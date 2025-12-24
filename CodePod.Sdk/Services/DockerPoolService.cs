@@ -9,7 +9,7 @@ namespace CodePod.Sdk.Services;
 /// <summary>
 /// Docker池服务接口
 /// </summary>
-public interface IDockerPoolService
+public interface IDockerPoolService : IDisposable
 {
     /// <summary>
     /// 确保预热容器
