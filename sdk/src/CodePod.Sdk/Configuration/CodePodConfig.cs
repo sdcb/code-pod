@@ -1,12 +1,126 @@
+using System.Runtime.InteropServices;
 using CodePod.Sdk.Models;
 
 namespace CodePod.Sdk.Configuration;
+
+/// <summary>
+/// Docker 运行环境类型
+/// </summary>
+public enum DockerEnvironment
+{
+    /// <summary>
+    /// Linux 容器（默认）
+    /// </summary>
+    Linux,
+
+    /// <summary>
+    /// Windows 容器
+    /// </summary>
+    Windows
+}
 
 /// <summary>
 /// CodePod SDK 配置
 /// </summary>
 public class CodePodConfig
 {
+    /// <summary>
+    /// Docker 运行环境（linux/windows），默认 Linux
+    /// </summary>
+    public DockerEnvironment DockerEnvironment { get; set; } = DockerEnvironment.Linux;
+
+    /// <summary>
+    /// Docker 服务端点地址。
+    /// 如果为 null，将根据操作系统自动选择默认地址：
+    /// - Windows: npipe://./pipe/docker_engine
+    /// - Linux/macOS: unix:///var/run/docker.sock
+    /// </summary>
+    public string? DockerEndpoint { get; set; } = null;
+
+    /// <summary>
+    /// 获取实际的 Docker 端点 URI
+    /// </summary>
+    public Uri GetDockerEndpointUri()
+    {
+        // 优先使用配置中的端点
+        if (!string.IsNullOrWhiteSpace(DockerEndpoint))
+        {
+            return new Uri(DockerEndpoint);
+        }
+
+        // 根据操作系统选择默认值
+        var uri = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? "npipe://./pipe/docker_engine"
+            : "unix:///var/run/docker.sock";
+
+        return new Uri(uri);
+    }
+
+    /// <summary>
+    /// 判断是否为 Windows 容器环境
+    /// </summary>
+    public bool IsWindowsContainer => DockerEnvironment == DockerEnvironment.Windows;
+
+    /// <summary>
+    /// 获取用于执行命令的 shell 命令数组
+    /// Linux: /bin/bash -lc "command"
+    /// Windows: pwsh -c "command" (PowerShell 7)
+    /// </summary>
+    public string[] GetShellCommand(string command)
+    {
+        return IsWindowsContainer
+            ? ["pwsh", "-c", command]
+            : ["/bin/bash", "-lc", command];
+    }
+
+    /// <summary>
+    /// 获取容器保持运行的命令
+    /// Linux: tail -f /dev/null
+    /// Windows: cmd /c "ping -t localhost" (使用原生命令，启动更快)
+    /// </summary>
+    public string[] GetKeepAliveCommand()
+    {
+        return IsWindowsContainer
+            ? ["cmd", "/c", "ping -t localhost"]
+            : ["/bin/bash", "-lc", "tail -f /dev/null"];
+    }
+
+    /// <summary>
+    /// 获取创建目录的命令
+    /// Linux: mkdir -p
+    /// Windows: cmd /c mkdir (使用原生命令，启动更快)
+    /// </summary>
+    public string GetMkdirCommand(params string[] paths)
+    {
+        if (IsWindowsContainer)
+        {
+            // Windows cmd: 使用 mkdir 创建目录 (如果存在则忽略)
+            var commands = paths.Select(p => $"if not exist \"{p.Replace('/', '\\')}\" mkdir \"{p.Replace('/', '\\')}\"");
+            return string.Join(" & ", commands);
+        }
+        else
+        {
+            return $"mkdir -p {string.Join(" ", paths)}";
+        }
+    }
+
+    /// <summary>
+    /// 获取删除文件的命令
+    /// Linux: rm -f "path"
+    /// Windows (pwsh): Remove-Item -Force "path"
+    /// </summary>
+    public string GetDeleteFileCommand(string filePath)
+    {
+        if (IsWindowsContainer)
+        {
+            return $"Remove-Item -Force -ErrorAction SilentlyContinue '{filePath}'";
+        }
+        else
+        {
+            return $"rm -f \"{filePath}\"";
+        }
+    }
+
     /// <summary>
     /// Docker镜像名称
     /// </summary>

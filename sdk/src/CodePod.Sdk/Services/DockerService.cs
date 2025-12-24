@@ -109,9 +109,9 @@ public class DockerService : IDockerService
     private readonly ILogger<DockerService>? _logger;
 
 
-    public DockerService(IDockerClientFactory clientFactory, CodePodConfig config, ILogger<DockerService>? logger = null)
+    public DockerService(CodePodConfig config, ILogger<DockerService>? logger = null)
     {
-        _client = clientFactory.CreateClient();
+        _client = new DockerClientConfiguration(config.GetDockerEndpointUri()).CreateClient();
         _config = config;
         _logger = logger;
     }
@@ -178,6 +178,26 @@ public class DockerService : IDockerService
                 labels[$"{_config.LabelPrefix}.session"] = sessionId.Value.ToString();
             }
 
+            // 构建 HostConfig，Windows 容器不支持某些选项
+            var hostConfig = new HostConfig
+            {
+                NetworkMode = network.ToDockerNetworkMode(_config.IsWindowsContainer),
+                Memory = limits.MemoryBytes,
+                NanoCPUs = (long)(limits.CpuCores * 1_000_000_000) // 1e9 = 1 CPU
+            };
+
+            if (!_config.IsWindowsContainer)
+            {
+                // Linux 容器：支持 PidsLimit
+                hostConfig.PidsLimit = limits.MaxProcesses;
+            }
+            else
+            {
+                // Windows 容器：Windows Server 2025 支持 Memory 和 CPU 限制
+                // 但不支持 PidsLimit（这是 Linux cgroups 特有功能）
+                _logger?.LogDebug("Windows container mode: PidsLimit is not supported");
+            }
+
             var response = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
             {
                 Name = containerName,
@@ -185,16 +205,10 @@ public class DockerService : IDockerService
                 Tty = false,
                 AttachStdout = false,
                 AttachStderr = false,
-                Cmd = ["/bin/bash", "-lc", "tail -f /dev/null"],
+                Cmd = _config.GetKeepAliveCommand(),
                 WorkingDir = _config.WorkDir,
                 Labels = labels,
-                HostConfig = new HostConfig
-                {
-                    Memory = limits.MemoryBytes,
-                    NanoCPUs = (long)(limits.CpuCores * 1_000_000_000), // 1e9 = 1 CPU
-                    PidsLimit = limits.MaxProcesses,
-                    NetworkMode = network.ToDockerNetworkMode()
-                }
+                HostConfig = hostConfig
             }, cancellationToken);
 
             await _client.Containers.StartContainerAsync(response.ID, new ContainerStartParameters(), cancellationToken);
@@ -204,7 +218,8 @@ public class DockerService : IDockerService
                 limits.MemoryBytes / 1024 / 1024, limits.CpuCores, limits.MaxProcesses, network);
 
             // 创建工作目录和 artifacts 目录
-            await ExecuteCommandAsync(response.ID, $"mkdir -p {_config.WorkDir} {_config.WorkDir}/{_config.ArtifactsDir}", "/", 10, cancellationToken);
+            var mkdirCmd = _config.GetMkdirCommand(_config.WorkDir, $"{_config.WorkDir}/{_config.ArtifactsDir}");
+            await ExecuteCommandAsync(response.ID, mkdirCmd, "/", 30, cancellationToken);
 
             return new ContainerInfo
             {
@@ -339,7 +354,7 @@ public class DockerService : IDockerService
     public Task<CommandResult> ExecuteCommandAsync(string containerId, string command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default)
     {
         // 包装为 shell 命令
-        return ExecuteCommandAsync(containerId, ["/bin/bash", "-lc", command], workingDirectory, timeoutSeconds, cancellationToken);
+        return ExecuteCommandAsync(containerId, _config.GetShellCommand(command), workingDirectory, timeoutSeconds, cancellationToken);
     }
 
     public async Task<CommandResult> ExecuteCommandAsync(string containerId, string[] command, string workingDirectory, int timeoutSeconds, CancellationToken cancellationToken = default)
@@ -389,7 +404,7 @@ public class DockerService : IDockerService
         CancellationToken cancellationToken = default)
     {
         // 包装为 shell 命令
-        return ExecuteCommandStreamAsync(containerId, ["/bin/bash", "-lc", command], workingDirectory, timeoutSeconds, cancellationToken);
+        return ExecuteCommandStreamAsync(containerId, _config.GetShellCommand(command), workingDirectory, timeoutSeconds, cancellationToken);
     }
 
     public async IAsyncEnumerable<CommandOutputEvent> ExecuteCommandStreamAsync(
@@ -576,8 +591,17 @@ public class DockerService : IDockerService
         await WrapDockerOperationAsync("AssignSession", async () =>
         {
             _logger?.LogInformation("Container {ContainerId} assigned to session {SessionId}", containerId[..12], sessionId);
+            
+            // Windows Hyper-V 隔离容器不支持文件系统操作，跳过标记文件创建
+            // 会话关联信息已通过容器标签存储
+            if (_config.IsWindowsContainer)
+            {
+                _logger?.LogDebug("Skipping session marker file for Windows container (Hyper-V isolation does not support filesystem operations)");
+                return;
+            }
+            
             var marker = $"Session: {sessionId}\nAssigned: {DateTimeOffset.UtcNow:o}";
-            await UploadFileAsync(containerId, "/app/.session", Encoding.UTF8.GetBytes(marker), cancellationToken);
+            await UploadFileAsync(containerId, $"{_config.WorkDir}/.session", Encoding.UTF8.GetBytes(marker), cancellationToken);
         }, containerId);
     }
 

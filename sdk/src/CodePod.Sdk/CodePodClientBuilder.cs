@@ -12,7 +12,6 @@ namespace CodePod.Sdk;
 public class CodePodClientBuilder
 {
     private CodePodConfig _config = new();
-    private IDockerClientFactory? _dockerClientFactory;
     private ILoggerFactory? _loggerFactory;
     private IDbContextFactory<CodePodDbContext>? _dbContextFactory;
     private Action<DbContextOptionsBuilder>? _dbContextOptionsAction;
@@ -35,15 +34,6 @@ public class CodePodClientBuilder
     public CodePodClientBuilder WithConfig(CodePodConfig config)
     {
         _config = config;
-        return this;
-    }
-
-    /// <summary>
-    /// 使用自定义 Docker 客户端工厂
-    /// </summary>
-    public CodePodClientBuilder WithDockerClientFactory(IDockerClientFactory factory)
-    {
-        _dockerClientFactory = factory;
         return this;
     }
 
@@ -112,10 +102,7 @@ public class CodePodClientBuilder
             context.Database.EnsureCreated();
         }
 
-        var dockerClientFactory = _dockerClientFactory ?? new DockerClientFactory();
-
         var dockerService = new DockerService(
-            dockerClientFactory,
             _config,
             _loggerFactory?.CreateLogger<DockerService>());
 

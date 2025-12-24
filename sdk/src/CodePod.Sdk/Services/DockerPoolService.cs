@@ -60,7 +60,7 @@ public interface IDockerPoolService
 /// <summary>
 /// Docker池服务实现
 /// </summary>
-public class DockerPoolService : IDockerPoolService
+public class DockerPoolService : IDockerPoolService, IDisposable
 {
     private readonly IDockerService _dockerService;
     private readonly IDbContextFactory<CodePodDbContext> _contextFactory;
@@ -68,7 +68,9 @@ public class DockerPoolService : IDockerPoolService
     private readonly CodePodConfig _config;
     private readonly ILogger<DockerPoolService>? _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly CancellationTokenSource _backgroundCts = new();
     private bool _initialized = false;
+    private bool _disposed = false;
 
     public event EventHandler? OnStatusChanged;
 
@@ -159,8 +161,8 @@ public class DockerPoolService : IDockerPoolService
                     _logger?.LogInformation("Allocated container {ContainerId} to session {SessionId}", idleContainer.ShortId, sessionId);
                     NotifyStatusChanged();
 
-                    // 在后台补充预热容器（如果还有空间）
-                    _ = TryPrewarmOneAsync(CancellationToken.None);
+                    // 在后台补充预热容器（如果还有空间）- 使用内部 CancellationToken
+                    _ = TryPrewarmOneAsync(_backgroundCts.Token);
 
                     return idleContainer;
                 }
@@ -258,8 +260,8 @@ public class DockerPoolService : IDockerPoolService
             _lock.Release();
         }
 
-        // 在后台补充预热容器
-        _ = TryPrewarmOneAsync(CancellationToken.None);
+        // 在后台补充预热容器 - 使用内部 CancellationToken
+        _ = TryPrewarmOneAsync(_backgroundCts.Token);
     }
 
     public async Task ForceDeleteContainerAsync(string containerId, CancellationToken cancellationToken = default)
@@ -377,7 +379,7 @@ public class DockerPoolService : IDockerPoolService
             }
 
             // 执行一个简单命令确保容器就绪
-            await _dockerService.ExecuteCommandAsync(containerInfo.ContainerId, "echo ready", "/app", 10, cancellationToken);
+            await _dockerService.ExecuteCommandAsync(containerInfo.ContainerId, "echo ready", "/app", 30, cancellationToken);
 
             // 移除临时占位，添加真实容器
             await DeleteContainerAsync(tempId, cancellationToken);
@@ -479,5 +481,18 @@ public class DockerPoolService : IDockerPoolService
         {
             _logger?.LogWarning(ex, "Status change notification failed");
         }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        // 取消所有后台任务
+        _backgroundCts.Cancel();
+        _backgroundCts.Dispose();
+        _lock.Dispose();
+
+        GC.SuppressFinalize(this);
     }
 }

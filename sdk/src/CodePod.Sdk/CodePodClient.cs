@@ -304,7 +304,8 @@ public class CodePodClient : IDisposable
     public async Task DeleteFileAsync(int sessionId, string filePath, CancellationToken cancellationToken = default)
     {
         var session = await GetActiveSessionAsync(sessionId, cancellationToken);
-        var result = await _dockerService.ExecuteCommandAsync(session.ContainerId!, $"rm -f \"{filePath}\"", "/", 10, cancellationToken);
+        var deleteCommand = _config.GetDeleteFileCommand(filePath);
+        var result = await _dockerService.ExecuteCommandAsync(session.ContainerId!, deleteCommand, "/", 10, cancellationToken);
         if (result.ExitCode != 0)
         {
             throw new InvalidOperationException($"Failed to delete file: {result.Stderr}");
@@ -435,6 +436,13 @@ public class CodePodClient : IDisposable
 
     public void Dispose()
     {
+        // 先取消后台任务（DockerPoolService）
+        if (_poolService is IDisposable poolDisposable)
+        {
+            poolDisposable.Dispose();
+        }
+
+        // 然后释放 Docker 客户端
         _dockerService.Dispose();
         GC.SuppressFinalize(this);
     }

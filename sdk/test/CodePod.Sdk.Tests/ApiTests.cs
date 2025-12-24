@@ -87,10 +87,10 @@ public class ApiTests : TestBase
         var session = await Client.CreateSessionAsync("多行输出测试");
         await WaitForSessionReadyAsync(session.Id);
 
-        // Act
+        // Act - 使用跨平台命令
         var result = await Client.ExecuteCommandAsync(
             session.Id,
-            "for i in 1 2 3; do echo \"Line $i\"; done");
+            GetMultiLineEchoCommand(3));
 
         // Assert
         Assert.Equal(0, result.ExitCode);
@@ -105,14 +105,14 @@ public class ApiTests : TestBase
         var session = await Client.CreateSessionAsync("流式输出测试");
         await WaitForSessionReadyAsync(session.Id);
 
-        // Act
+        // Act - 使用跨平台命令
         var stdoutEvents = new List<string>();
         var stderrEvents = new List<string>();
         long? exitCode = null;
 
         await foreach (var evt in Client.ExecuteCommandStreamAsync(
             session.Id,
-            "for i in 1 2 3; do echo \"stdout: Line $i\"; echo \"stderr: Warning $i\" >&2; sleep 0.1; done"))
+            GetStreamingOutputCommand(3, 0.1)))
         {
             switch (evt.Type)
             {
