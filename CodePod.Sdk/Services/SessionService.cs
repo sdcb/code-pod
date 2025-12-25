@@ -15,12 +15,7 @@ public interface ISessionService
     /// <summary>
     /// 创建会话
     /// </summary>
-    Task<SessionInfo> CreateSessionAsync(string? name = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 创建会话（带完整选项）
-    /// </summary>
-    Task<SessionInfo> CreateSessionAsync(SessionOptions options, CancellationToken cancellationToken = default);
+    Task<SessionInfo> CreateSessionAsync(SessionOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取系统配置的最大超时时间（秒）
@@ -87,29 +82,22 @@ public class SessionService : ISessionService
 
     public int MaxTimeoutSeconds => _config.SessionTimeoutSeconds;
 
-    public Task<SessionInfo> CreateSessionAsync(string? name = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> CreateSessionAsync(SessionOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return CreateSessionAsync(new SessionOptions
-        {
-            Name = name,
-            TimeoutSeconds = timeoutSeconds
-        }, cancellationToken);
-    }
+        SessionOptions effectiveOptions = options ?? new SessionOptions();
 
-    public async Task<SessionInfo> CreateSessionAsync(SessionOptions options, CancellationToken cancellationToken = default)
-    {
         // 验证超时时间
-        if (options.TimeoutSeconds.HasValue && options.TimeoutSeconds.Value > _config.SessionTimeoutSeconds)
+        if (effectiveOptions.TimeoutSeconds.HasValue && effectiveOptions.TimeoutSeconds.Value > _config.SessionTimeoutSeconds)
         {
-            throw new TimeoutExceedsLimitException(options.TimeoutSeconds.Value, _config.SessionTimeoutSeconds);
+            throw new TimeoutExceedsLimitException(effectiveOptions.TimeoutSeconds.Value, _config.SessionTimeoutSeconds);
         }
 
         // 验证资源限制
-        ResourceLimits resourceLimits = options.ResourceLimits ?? _config.DefaultResourceLimits.Clone();
+        ResourceLimits resourceLimits = effectiveOptions.ResourceLimits ?? _config.DefaultResourceLimits.Clone();
         resourceLimits.Validate(_config.MaxResourceLimits);
 
         // 网络模式
-        NetworkMode networkMode = options.NetworkMode ?? _config.DefaultNetworkMode;
+        NetworkMode networkMode = effectiveOptions.NetworkMode ?? _config.DefaultNetworkMode;
 
         // 先预留一个容器：如果这里拿不到，就直接失败，不写入任何 session 记录。
         ContainerInfo? container = await _poolService.AcquireContainerAsync(resourceLimits, networkMode, cancellationToken);
@@ -127,11 +115,11 @@ public class SessionService : ISessionService
             {
                 SessionEntity sessionEntity = new()
                 {
-                    Name = options.Name,
+                    Name = effectiveOptions.Name,
                     CreatedAt = now,
                     LastActivityAt = now,
                     Status = SessionStatus.Active,
-                    TimeoutSeconds = options.TimeoutSeconds,
+                    TimeoutSeconds = effectiveOptions.TimeoutSeconds,
                     ResourceLimitsJson = System.Text.Json.JsonSerializer.Serialize(resourceLimits),
                     NetworkMode = networkMode,
                     ContainerId = container.ContainerId,

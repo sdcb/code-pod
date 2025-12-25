@@ -48,12 +48,12 @@ public class MaxContainerTests : TestBase
         // Arrange - 创建容器数量等于最大限制
         for (int i = 0; i < Config.MaxContainers; i++)
         {
-            await sessions.CreateSessionAsync($"Session-{i + 1}");
+            await sessions.CreateSessionAsync(new SessionOptions { Name = $"Session-{i + 1}" });
         }
 
         // Act & Assert - 达到上限后应直接失败（不会返回 queued session）
         await Assert.ThrowsAsync<CodePod.Sdk.Exceptions.MaxContainersReachedException>(() =>
-            sessions.CreateSessionAsync("Exceed-Max"));
+            sessions.CreateSessionAsync(new SessionOptions { Name = "Exceed-Max" }));
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class MaxContainerTests : TestBase
         // Arrange - 填满容器池
         for (int i = 0; i < Config.MaxContainers; i++)
         {
-            SessionInfo session = await sessions.CreateSessionAsync($"Fill-Session-{i + 1}");
+            SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = $"Fill-Session-{i + 1}" });
             createdSessions.Add(session.Id);
         }
 
@@ -73,7 +73,7 @@ public class MaxContainerTests : TestBase
         await Client.DestroySessionAsync(createdSessions[0]);
         await Task.Delay(500); // 给清理一些时间
 
-        SessionInfo sessionAfterRelease = await sessions.CreateSessionAsync("After-Release");
+        SessionInfo sessionAfterRelease = await sessions.CreateSessionAsync(new SessionOptions { Name = "After-Release" });
 
         // Assert
         Assert.False(string.IsNullOrEmpty(sessionAfterRelease.ContainerId));

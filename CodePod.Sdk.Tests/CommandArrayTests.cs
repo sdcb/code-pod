@@ -30,7 +30,7 @@ public class CommandArrayTests
     {
         // Arrange
         await using TestSessionTracker sessions = new(Client);
-        SessionInfo session = await sessions.CreateSessionAsync("命令数组基础测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "命令数组基础测试" });
 
         // Act - 使用命令数组
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -48,7 +48,7 @@ public class CommandArrayTests
     {
         // Arrange
         await using TestSessionTracker sessions = new(Client);
-        SessionInfo session = await sessions.CreateSessionAsync("避免转义测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "避免转义测试" });
 
         // Act - 包含特殊字符的参数，使用数组形式不需要转义
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -69,7 +69,7 @@ public class CommandArrayTests
     {
         // Arrange
         await using TestSessionTracker sessions = new(Client);
-        SessionInfo session = await sessions.CreateSessionAsync("Python 一行代码测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "Python 一行代码测试" });
 
         // Act - AI 常用的 Python 一行代码执行
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -90,7 +90,7 @@ public class CommandArrayTests
     {
         // Arrange
         await using TestSessionTracker sessions = new(Client);
-        SessionInfo session = await sessions.CreateSessionAsync("Python 命令数组测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "Python 命令数组测试" });
 
         // Act
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -108,7 +108,7 @@ public class CommandArrayTests
     {
         // Arrange
         await using TestSessionTracker sessions = new(Client);
-        SessionInfo session = await sessions.CreateSessionAsync("工作目录测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "工作目录测试" });
 
         string targetDir = GetWorkPath("testdir");
         await Client.ExecuteCommandAsync(
@@ -132,7 +132,7 @@ public class CommandArrayTests
     {
         // Arrange
         await using TestSessionTracker sessions = new(Client);
-        SessionInfo session = await sessions.CreateSessionAsync("流式命令数组测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "流式命令数组测试" });
 
         // Act
         List<string> outputs = new();
@@ -159,7 +159,7 @@ public class CommandArrayTests
     {
         // Arrange
         await using TestSessionTracker sessions = new(Client);
-        SessionInfo session = await sessions.CreateSessionAsync("复杂 Python 代码测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "复杂 Python 代码测试" });
 
         // 这是 AI 经常生成的多行 Python 代码
         var pythonCode = @"
@@ -188,7 +188,7 @@ print(json.dumps(data, indent=2))
     {
         // Arrange
         await using TestSessionTracker sessions = new(Client);
-        SessionInfo session = await sessions.CreateSessionAsync("字符串 vs 数组对比");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "字符串 vs 数组对比" });
 
         // 测试相同命令的两种方式
 

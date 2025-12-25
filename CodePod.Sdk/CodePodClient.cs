@@ -99,15 +99,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 创建新会话
     /// </summary>
-    public async Task<SessionInfo> CreateSessionAsync(string? name = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
-    {
-        return await _sessionService.CreateSessionAsync(name, timeoutSeconds, cancellationToken);
-    }
-
-    /// <summary>
-    /// 创建新会话（带资源限制和网络模式）
-    /// </summary>
-    public async Task<SessionInfo> CreateSessionAsync(SessionOptions options, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> CreateSessionAsync(SessionOptions? options = null, CancellationToken cancellationToken = default)
     {
         return await _sessionService.CreateSessionAsync(options, cancellationToken);
     }

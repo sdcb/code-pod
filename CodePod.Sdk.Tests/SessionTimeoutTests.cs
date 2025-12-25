@@ -20,7 +20,7 @@ public class SessionTimeoutTests : TestBase
     public async Task CommandExecution_ExtendsTimeout()
     {
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("命令延时测试", 10);
+        SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "命令延时测试", TimeoutSeconds = 10 });
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         // Wait a bit
@@ -38,7 +38,7 @@ public class SessionTimeoutTests : TestBase
     public async Task FileUpload_ExtendsTimeout()
     {
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("上传延时测试", 10);
+        SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "上传延时测试", TimeoutSeconds = 10 });
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         await Task.Delay(1000);
@@ -55,7 +55,7 @@ public class SessionTimeoutTests : TestBase
     public async Task ListDirectory_ExtendsTimeout()
     {
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("列目录延时测试", 10);
+        SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "列目录延时测试", TimeoutSeconds = 10 });
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         await Task.Delay(1000);
@@ -72,7 +72,7 @@ public class SessionTimeoutTests : TestBase
     public async Task FileDownload_ExtendsTimeout()
     {
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("下载延时测试", 10);
+        SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "下载延时测试", TimeoutSeconds = 10 });
         
         // 先上传一个文件
         var downloadPath = GetWorkPath("download-timeout.txt");
@@ -118,7 +118,7 @@ public class SessionTimeoutTests : TestBase
         try
         {
             // Arrange
-            SessionInfo session = await shortTimeoutClient.CreateSessionAsync("超时销毁测试", 2);
+            SessionInfo session = await shortTimeoutClient.CreateSessionAsync(new SessionOptions { Name = "超时销毁测试", TimeoutSeconds = 2 });
             
             var containerId = session.ContainerId;
             

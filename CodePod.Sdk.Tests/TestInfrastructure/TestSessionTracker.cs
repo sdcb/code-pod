@@ -17,19 +17,7 @@ public sealed class TestSessionTracker : IAsyncDisposable
         _client = client;
     }
 
-    public async Task<SessionInfo> CreateSessionAsync(
-        string? name = null,
-        int? timeoutSeconds = null,
-        CancellationToken cancellationToken = default)
-    {
-        SessionInfo session = await _client.CreateSessionAsync(name, timeoutSeconds, cancellationToken);
-        _sessionIds.Add(session.Id);
-        return session;
-    }
-
-    public async Task<SessionInfo> CreateSessionAsync(
-        SessionOptions options,
-        CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> CreateSessionAsync(SessionOptions? options = null, CancellationToken cancellationToken = default)
     {
         SessionInfo session = await _client.CreateSessionAsync(options, cancellationToken);
         _sessionIds.Add(session.Id);

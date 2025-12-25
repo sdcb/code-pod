@@ -41,7 +41,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Act
-        SessionInfo session = await sessions.CreateSessionAsync("API测试会话");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "API测试会话" });
 
         // Assert
         Assert.NotNull(session);
@@ -56,7 +56,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("详情测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "详情测试" });
 
         // Act
         SessionInfo retrieved = await Client.GetSessionAsync(session.Id);
@@ -73,7 +73,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("命令测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "命令测试" });
 
         // Act
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -92,7 +92,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("错误命令测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "错误命令测试" });
 
         // Act
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -111,7 +111,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("多行输出测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "多行输出测试" });
 
         // Act - 使用跨平台命令
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -131,7 +131,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("流式输出测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "流式输出测试" });
 
         // Act - 使用跨平台命令
         List<string> stdoutEvents = new();
@@ -170,7 +170,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("上传文件测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "上传文件测试" });
         var content = "Hello, this is a test file!\n测试中文内容";
         var bytes = Encoding.UTF8.GetBytes(content);
 
@@ -189,7 +189,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("列目录测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "列目录测试" });
         var content = "test content";
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("listtest.txt"), Encoding.UTF8.GetBytes(content));
 
@@ -208,7 +208,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("下载文件测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "下载文件测试" });
         var originalContent = "Hello, this is a test file!\n测试中文内容";
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("download.txt"), Encoding.UTF8.GetBytes(originalContent));
 
@@ -228,7 +228,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("删除文件测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "删除文件测试" });
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("todelete.txt"), Encoding.UTF8.GetBytes("delete me"));
 
         // Act
@@ -246,8 +246,8 @@ public class ApiTests
         await using TestSessionTracker sessionTracker = new(Client);
 
         // Arrange
-        await sessionTracker.CreateSessionAsync("会话1");
-        await sessionTracker.CreateSessionAsync("会话2");
+        await sessionTracker.CreateSessionAsync(new SessionOptions { Name = "会话1" });
+        await sessionTracker.CreateSessionAsync(new SessionOptions { Name = "会话2" });
 
         // Act
         IReadOnlyList<SessionInfo> sessions = await Client.GetAllSessionsAsync();
@@ -274,7 +274,7 @@ public class ApiTests
         await using TestSessionTracker sessionTracker = new(Client);
 
         // Arrange
-        SessionInfo session = await sessionTracker.CreateSessionAsync("销毁测试");
+        SessionInfo session = await sessionTracker.CreateSessionAsync(new SessionOptions { Name = "销毁测试" });
 
         // Act
         await Client.DestroySessionAsync(session.Id);
@@ -292,7 +292,7 @@ public class ApiTests
         await using TestSessionTracker sessions = new(Client);
 
         // Act
-        SessionInfo session = await sessions.CreateSessionAsync("短超时测试", 10);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "短超时测试", TimeoutSeconds = 10 });
 
         // Assert
         Assert.Equal(10, session.TimeoutSeconds);
@@ -304,7 +304,7 @@ public class ApiTests
     {
         // Arrange & Act & Assert
         await Assert.ThrowsAsync<Exceptions.TimeoutExceedsLimitException>(() =>
-            Client.CreateSessionAsync("超长超时测试", 999999));
+            Client.CreateSessionAsync(new SessionOptions { Name = "超长超时测试", TimeoutSeconds = 999999 }));
     }
 
     [Fact]
@@ -317,7 +317,7 @@ public class ApiTests
         SystemStatus beforeStatus = await Client.GetStatusAsync();
 
         // Act
-        SessionInfo session = await sessions.CreateSessionAsync("补充测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "补充测试" });
         
         // 等待预热容器创建
         await Task.Delay(2000);

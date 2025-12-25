@@ -82,7 +82,7 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task GetSessionUsage_ReturnsStats()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("使用量测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "使用量测试" });
 
         // 执行一些命令产生使用量
         await _client.ExecuteCommandAsync(session.Id, "echo 'test'");
@@ -106,7 +106,7 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task GetSessionUsage_AfterWork_ShowsActivity()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("活动使用量测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "活动使用量测试" });
 
         // 获取初始使用量
         SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
@@ -136,7 +136,7 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task GetSessionUsage_MemoryIntensiveWork_ShowsHigherMemory()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("内存密集测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "内存密集测试" });
 
         // 获取初始使用量
         SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
@@ -164,7 +164,7 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task SessionUsage_HasValidTimestamp()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("时间戳测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "时间戳测试" });
 
         // Act
         SessionUsage? usage = await _client.GetSessionUsageAsync(session.Id);
@@ -189,8 +189,8 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task MultipleSession_EachHasIndependentUsage()
     {
         // Arrange
-        SessionInfo session1 = await _client.CreateSessionAsync("会话1");
-        SessionInfo session2 = await _client.CreateSessionAsync("会话2");
+        SessionInfo session1 = await _client.CreateSessionAsync(new SessionOptions { Name = "会话1" });
+        SessionInfo session2 = await _client.CreateSessionAsync(new SessionOptions { Name = "会话2" });
 
         // 在会话1执行更多工作
         for (int i = 0; i < 10; i++)

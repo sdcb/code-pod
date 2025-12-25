@@ -23,7 +23,7 @@ public class PerformanceTests : TestBase
             Stopwatch sw = Stopwatch.StartNew();
 
             // 创建会话
-            SessionInfo session = await sessions.CreateSessionAsync($"性能测试-{round}");
+            SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = $"性能测试-{round}" });
 
             sw.Stop();
             sessionCreateTimes.Add(sw.Elapsed.TotalMilliseconds);
@@ -43,7 +43,7 @@ public class PerformanceTests : TestBase
     {
         await using TestSessionTracker sessions = new(Client);
         // Arrange
-        SessionInfo session = await sessions.CreateSessionAsync("命令性能测试");
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "命令性能测试" });
 
         List<double> commandExecTimes = new();
 
@@ -80,7 +80,7 @@ public class PerformanceTests : TestBase
             Stopwatch totalSw = Stopwatch.StartNew();
 
             // 1. 创建会话
-            SessionInfo session = await sessions.CreateSessionAsync($"完整流程-{round}");
+            SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = $"完整流程-{round}" });
 
             // 2. 执行一个简单命令
             CommandResult result = await Client.ExecuteCommandAsync(

@@ -213,7 +213,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         if (_isWindowsContainer) return;
 
         // Arrange - 客户端配置默认使用 None
-        SessionInfo session = await _client.CreateSessionAsync("默认网络模式测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "默认网络模式测试" });
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
         CommandResult result = await _client.ExecuteCommandAsync(

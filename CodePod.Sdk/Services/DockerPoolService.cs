@@ -347,7 +347,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         try
         {
             // 创建实际容器
-            ContainerInfo containerInfo = await _dockerService.CreateContainerAsync(cancellationToken);
+            ContainerInfo containerInfo = await _dockerService.CreateContainerAsync(cancellationToken: cancellationToken);
 
             // 等待容器进入running状态
             TimeSpan maxWait = TimeSpan.FromSeconds(30);

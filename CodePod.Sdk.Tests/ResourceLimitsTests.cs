@@ -91,7 +91,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     public async Task CreateSession_WithDefaultLimits_Succeeds()
     {
         // Act
-        SessionInfo session = await _client.CreateSessionAsync("默认限制测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "默认限制测试" });
 
         // Assert
         Assert.NotNull(session);

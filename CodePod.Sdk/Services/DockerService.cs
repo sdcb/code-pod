@@ -25,14 +25,9 @@ public interface IDockerService : IDisposable
     Task EnsureImageAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 创建并启动容器（使用默认资源限制和网络模式）
+    /// 创建并启动容器（resourceLimits/networkMode 为 null 时使用默认值）
     /// </summary>
-    Task<ContainerInfo> CreateContainerAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 创建并启动容器（指定资源限制和网络模式）
-    /// </summary>
-    Task<ContainerInfo> CreateContainerAsync(ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default);
+    Task<ContainerInfo> CreateContainerAsync(ResourceLimits? resourceLimits = null, NetworkMode? networkMode = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取所有受管理的容器
@@ -140,12 +135,7 @@ public class DockerService : IDockerService
         });
     }
 
-    public Task<ContainerInfo> CreateContainerAsync(CancellationToken cancellationToken = default)
-    {
-        return CreateContainerAsync(null, null, cancellationToken);
-    }
-
-    public async Task<ContainerInfo> CreateContainerAsync(ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default)
+    public async Task<ContainerInfo> CreateContainerAsync(ResourceLimits? resourceLimits = null, NetworkMode? networkMode = null, CancellationToken cancellationToken = default)
     {
         return await WrapDockerOperationAsync("CreateContainer", async () =>
         {

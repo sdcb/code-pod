@@ -88,7 +88,7 @@ public class OutputTruncationTests : IAsyncLifetime
     public async Task SmallOutput_NotTruncated()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("小输出测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "小输出测试" });
 
         // Act - 生成少量输出
         CommandResult result = await _client.ExecuteCommandAsync(
@@ -107,7 +107,7 @@ public class OutputTruncationTests : IAsyncLifetime
     public async Task LargeOutput_IsTruncated()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("大输出截断测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "大输出截断测试" });
 
         // Act - 生成大量输出 (超过 1KB)
         var command = _isWindowsContainer
@@ -134,7 +134,7 @@ public class OutputTruncationTests : IAsyncLifetime
     public async Task TruncationMessage_ContainsByteCount()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("截断信息测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "截断信息测试" });
 
         // Act - 生成大量输出
         var command = _isWindowsContainer
@@ -156,7 +156,7 @@ public class OutputTruncationTests : IAsyncLifetime
     public async Task StderrAlso_Truncated()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("Stderr 截断测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "Stderr 截断测试" });
 
         // Act - 生成大量 stderr 输出
         var command = _isWindowsContainer
@@ -180,7 +180,7 @@ public class OutputTruncationTests : IAsyncLifetime
     public async Task HeadAndTail_Strategy_PreservesContext()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync("头尾策略测试");
+        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "头尾策略测试" });
 
         // Act - 生成有特定开头和结尾的输出
         var command = _isWindowsContainer
