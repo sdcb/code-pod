@@ -37,7 +37,7 @@ public class CommandArrayTests : IAsyncLifetime
 
         var image = _isWindowsContainer ? settings.PythonWindowsImage : settings.PythonLinuxImage;
 
-        var config = new CodePodConfig
+        CodePodConfig config = new()
         {
             DockerEndpoint = settings.DockerEndpoint,
             IsWindowsContainer = _isWindowsContainer,
@@ -190,7 +190,7 @@ public class CommandArrayTests : IAsyncLifetime
         await WaitForSessionReadyAsync(session.Id);
 
         // Act
-        var outputs = new List<string>();
+        List<string> outputs = new();
         await foreach (CommandOutputEvent evt in _client.ExecuteCommandStreamAsync(
             session.Id,
             ["python", "-c", "for i in range(1,4): print(f'Line{i}')"]))

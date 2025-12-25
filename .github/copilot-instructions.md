@@ -1,11 +1,5 @@
-# Docker Shell Host - GitHub Copilot Instructions
+这是一个基于.NET的Docker容器管理平台，专为AI大模型 Code Interpreter 和高级数据分析场景设计。
 
-## 语言规范
-
-- **对话语言**：与用户对话时使用中文
-- **代码语言**：代码、错误信息、API 响应等使用英文
-- **文档和注释**：可以使用中文
-
-## 项目概述
-
-这是一个基于 ASP.NET Core 的 Docker 容器管理平台，专为大模型 Code Interpreter 和高级数据分析场景设计。
+与用户对话、文档和注释中使用中文；
+代码、异常、API响应等一律使用英文；
+用这样较新的C#语法：StringBuilder sb = new(); 避免使用var；

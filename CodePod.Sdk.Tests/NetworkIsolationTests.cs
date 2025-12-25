@@ -35,7 +35,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         var workDir = _isWindowsContainer ? "C:\\app" : "/app";
         var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
 
-        var config = new CodePodConfig
+        CodePodConfig config = new()
         {
             DockerEndpoint = settings.DockerEndpoint,
             IsWindowsContainer = _isWindowsContainer,
@@ -86,7 +86,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         if (_isWindowsContainer) return;
 
         // Arrange
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "网络隔离测试 - None",
             NetworkMode = NetworkMode.None
@@ -118,7 +118,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         if (_isWindowsContainer) return;
 
         // Arrange
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "本地网络测试 - None",
             NetworkMode = NetworkMode.None
@@ -151,7 +151,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         if (_isWindowsContainer) return;
 
         // Arrange
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "网络测试 - Bridge",
             NetworkMode = NetworkMode.Bridge
@@ -183,7 +183,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         if (_isWindowsContainer) return;
 
         // Arrange
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "网络接口测试 - Bridge",
             NetworkMode = NetworkMode.Bridge

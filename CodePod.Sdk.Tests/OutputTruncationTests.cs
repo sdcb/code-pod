@@ -35,7 +35,7 @@ public class OutputTruncationTests : IAsyncLifetime
         var workDir = _isWindowsContainer ? "C:\\app" : "/app";
         var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
 
-        var config = new CodePodConfig
+        CodePodConfig config = new()
         {
             DockerEndpoint = settings.DockerEndpoint,
             IsWindowsContainer = _isWindowsContainer,
@@ -213,7 +213,7 @@ public class OutputTruncationTests : IAsyncLifetime
     public async Task OutputOptions_DefaultValues_AreReasonable()
     {
         // Assert
-        var defaultOptions = new OutputOptions();
+        OutputOptions defaultOptions = new();
         
         Assert.Equal(64 * 1024, defaultOptions.MaxOutputBytes); // 64KB
         Assert.Equal(TruncationStrategy.HeadAndTail, defaultOptions.Strategy);

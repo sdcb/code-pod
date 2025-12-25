@@ -1,3 +1,4 @@
+using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Models;
 using Xunit;
 
@@ -99,7 +100,7 @@ public class SessionTimeoutTests : TestBase
         CodePodTestSettings settings = TestSettings.Load();
         var isWindowsContainer = settings.IsWindowsContainer;
 
-        var shortTimeoutConfig = new Configuration.CodePodConfig
+        CodePodConfig shortTimeoutConfig = new()
         {
             IsWindowsContainer = isWindowsContainer,
             DockerEndpoint = settings.DockerEndpoint,

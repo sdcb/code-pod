@@ -119,7 +119,7 @@ public class SessionService : ISessionService
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
-        var sessionEntity = new SessionEntity
+        SessionEntity sessionEntity = new()
         {
             Name = options.Name,
             CreatedAt = now,

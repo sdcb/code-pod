@@ -102,7 +102,7 @@ public class CodePodClientBuilder
             context.Database.EnsureCreated();
         }
 
-        var dockerService = new DockerService(
+        DockerService dockerService = new(
             _config,
             _loggerFactory?.CreateLogger<DockerService>());
 
@@ -117,20 +117,20 @@ public class CodePodClientBuilder
                 _loggerFactory?.CreateLogger<DockerStateSyncService>());
         }
 
-        var poolService = new DockerPoolService(
+        DockerPoolService poolService = new(
             dockerService,
             dbContextFactory,
             _config,
             _loggerFactory?.CreateLogger<DockerPoolService>(),
             stateSyncService);
 
-        var sessionService = new SessionService(
+        SessionService sessionService = new(
             dbContextFactory,
             poolService,
             _config,
             _loggerFactory?.CreateLogger<SessionService>());
 
-        var cleanupService = new SessionCleanupService(
+        SessionCleanupService cleanupService = new(
             dbContextFactory,
             sessionService,
             _config,
@@ -153,7 +153,7 @@ public class CodePodClientBuilder
             return _dbContextFactory;
         }
 
-        var optionsBuilder = new DbContextOptionsBuilder<CodePodDbContext>();
+        DbContextOptionsBuilder<CodePodDbContext> optionsBuilder = new();
 
         if (_useInMemoryDatabase)
         {

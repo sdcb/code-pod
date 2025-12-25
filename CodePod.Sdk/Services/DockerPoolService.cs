@@ -114,7 +114,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         {
             _logger?.LogInformation("Starting to warm {Count} containers (current: {Idle} idle, {Busy} busy)...",
                 toWarm, idle, busy);
-            var prewarmTasks = new List<Task>();
+            List<Task> prewarmTasks = new();
             for (int i = 0; i < toWarm; i++)
             {
                 prewarmTasks.Add(CreateAndWarmContainerAsync(cancellationToken));
@@ -221,7 +221,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
                 _lock.Release();
             }
 
-            var tasks = new List<Task>();
+            List<Task> tasks = new();
             for (int i = 0; i < neededCount; i++)
             {
                 tasks.Add(CreateAndWarmContainerAsync(cancellationToken));
@@ -345,7 +345,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
     {
         // 创建占位容器信息（预热中状态）
         var tempId = Guid.NewGuid().ToString("N");
-        var warmingContainer = new ContainerInfo
+        ContainerInfo warmingContainer = new()
         {
             ContainerId = tempId,
             Name = "warming...",
@@ -363,9 +363,9 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             ContainerInfo containerInfo = await _dockerService.CreateContainerAsync(null, true, cancellationToken);
 
             // 等待容器进入running状态
-            var maxWait = TimeSpan.FromSeconds(30);
+            TimeSpan maxWait = TimeSpan.FromSeconds(30);
             TimeSpan waited = TimeSpan.Zero;
-            var pollInterval = TimeSpan.FromMilliseconds(500);
+            TimeSpan pollInterval = TimeSpan.FromMilliseconds(500);
 
             while (waited < maxWait)
             {
@@ -384,7 +384,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             // 移除临时占位，添加真实容器
             await DeleteContainerAsync(tempId, cancellationToken);
 
-            var readyContainer = new ContainerInfo
+            ContainerInfo readyContainer = new()
             {
                 ContainerId = containerInfo.ContainerId,
                 Name = containerInfo.Name,

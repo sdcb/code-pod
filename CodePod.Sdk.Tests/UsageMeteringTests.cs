@@ -35,7 +35,7 @@ public class UsageMeteringTests : IAsyncLifetime
         var workDir = _isWindowsContainer ? "C:\\app" : "/app";
         var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
 
-        var config = new CodePodConfig
+        CodePodConfig config = new()
         {
             DockerEndpoint = settings.DockerEndpoint,
             IsWindowsContainer = _isWindowsContainer,

@@ -46,7 +46,7 @@ public class DockerStateSyncService : IDockerStateSyncService
 
         // 获取 Docker 中实际的受管理容器
         List<ContainerInfo> dockerContainers = await _dockerService.GetManagedContainersAsync(cancellationToken);
-        var dockerContainerIds = dockerContainers.Select(c => c.ContainerId).ToHashSet();
+        HashSet<string> dockerContainerIds = dockerContainers.Select(c => c.ContainerId).ToHashSet();
 
         _logger?.LogInformation("Found {Count} managed containers in Docker", dockerContainers.Count);
 
@@ -59,11 +59,11 @@ public class DockerStateSyncService : IDockerStateSyncService
             dbSessions = await context.Sessions.Where(s => s.Status != SessionStatus.Destroyed).ToListAsync(cancellationToken);
         }
 
-        var dbContainerIds = dbContainers.Select(c => c.ContainerId).ToHashSet();
+        HashSet<string> dbContainerIds = dbContainers.Select(c => c.ContainerId).ToHashSet();
         _logger?.LogInformation("Found {Count} containers in database", dbContainers.Count);
 
         // 1. 处理数据库中存在但 Docker 中不存在的容器（已被删除）
-        var deletedContainerIds = dbContainerIds.Except(dockerContainerIds).ToList();
+        List<string> deletedContainerIds = dbContainerIds.Except(dockerContainerIds).ToList();
         foreach (var containerId in deletedContainerIds)
         {
             _logger?.LogInformation("Container {ContainerId} no longer exists in Docker, removing from database",
@@ -90,7 +90,7 @@ public class DockerStateSyncService : IDockerStateSyncService
         }
 
         // 2. 处理 Docker 中存在但数据库中不存在的容器（新发现或遗留）
-        var newContainerIds = dockerContainerIds.Except(dbContainerIds).ToList();
+        List<string> newContainerIds = dockerContainerIds.Except(dbContainerIds).ToList();
         foreach (var containerId in newContainerIds)
         {
             ContainerInfo dockerContainer = dockerContainers.First(c => c.ContainerId == containerId);
@@ -150,7 +150,7 @@ public class DockerStateSyncService : IDockerStateSyncService
         }
 
         // 3. 更新数据库中已存在容器的状态
-        var existingContainerIds = dbContainerIds.Intersect(dockerContainerIds).ToList();
+        List<string> existingContainerIds = dbContainerIds.Intersect(dockerContainerIds).ToList();
         foreach (var containerId in existingContainerIds)
         {
             ContainerInfo dockerContainer = dockerContainers.First(c => c.ContainerId == containerId);

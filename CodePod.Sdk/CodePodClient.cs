@@ -66,7 +66,7 @@ public class CodePodClient : IDisposable
         var destroying = counts.FirstOrDefault(c => c.Status == ContainerStatus.Destroying)?.Count ?? 0;
 
         IEnumerable<SessionInfo> sessions = await _sessionService.GetAllSessionsAsync(cancellationToken);
-        var sessionList = sessions.ToList();
+        List<SessionInfo> sessionList = sessions.ToList();
 
         return new SystemStatus
         {

@@ -38,8 +38,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task CreateSession_ReturnsValidSession()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Act
-        SessionInfo session = await Client.CreateSessionAsync("API测试会话");
+        SessionInfo session = await sessions.CreateSessionAsync("API测试会话");
 
         // Assert
         Assert.NotNull(session);
@@ -51,8 +53,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task GetSession_AfterCreate_ReturnsCorrectDetails()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("详情测试");
+        SessionInfo session = await sessions.CreateSessionAsync("详情测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
@@ -67,8 +71,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task ExecuteCommand_BasicOutput_ReturnsCorrectResult()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("命令测试");
+        SessionInfo session = await sessions.CreateSessionAsync("命令测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
@@ -85,8 +91,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task ExecuteCommand_WithError_ReturnsNonZeroExitCode()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("错误命令测试");
+        SessionInfo session = await sessions.CreateSessionAsync("错误命令测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
@@ -103,8 +111,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task ExecuteCommand_MultiLineOutput_ReturnsAllLines()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("多行输出测试");
+        SessionInfo session = await sessions.CreateSessionAsync("多行输出测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act - 使用跨平台命令
@@ -122,13 +132,15 @@ public class ApiTests
     [TestPriority(1)]
     public async Task ExecuteCommandStream_ReturnsStreamedOutput()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("流式输出测试");
+        SessionInfo session = await sessions.CreateSessionAsync("流式输出测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act - 使用跨平台命令
-        var stdoutEvents = new List<string>();
-        var stderrEvents = new List<string>();
+        List<string> stdoutEvents = new();
+        List<string> stderrEvents = new();
         long? exitCode = null;
 
         await foreach (CommandOutputEvent evt in Client.ExecuteCommandStreamAsync(
@@ -160,8 +172,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task UploadFile_Succeeds()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("上传文件测试");
+        SessionInfo session = await sessions.CreateSessionAsync("上传文件测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
         var content = "Hello, this is a test file!\n测试中文内容";
         var bytes = Encoding.UTF8.GetBytes(content);
@@ -178,8 +192,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task ListDirectory_ReturnsFiles()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("列目录测试");
+        SessionInfo session = await sessions.CreateSessionAsync("列目录测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
         var content = "test content";
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("listtest.txt"), Encoding.UTF8.GetBytes(content));
@@ -196,8 +212,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task DownloadFile_ReturnsCorrectContent()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("下载文件测试");
+        SessionInfo session = await sessions.CreateSessionAsync("下载文件测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
         var originalContent = "Hello, this is a test file!\n测试中文内容";
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("download.txt"), Encoding.UTF8.GetBytes(originalContent));
@@ -215,8 +233,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task DeleteFile_RemovesFile()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("删除文件测试");
+        SessionInfo session = await sessions.CreateSessionAsync("删除文件测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("todelete.txt"), Encoding.UTF8.GetBytes("delete me"));
 
@@ -232,9 +252,11 @@ public class ApiTests
     [TestPriority(1)]
     public async Task GetAllSessions_ReturnsList()
     {
+        await using TestSessionTracker sessionTracker = new(Client);
+
         // Arrange
-        await Client.CreateSessionAsync("会话1");
-        await Client.CreateSessionAsync("会话2");
+        await sessionTracker.CreateSessionAsync("会话1");
+        await sessionTracker.CreateSessionAsync("会话2");
 
         // Act
         IReadOnlyList<SessionInfo> sessions = await Client.GetAllSessionsAsync();
@@ -258,8 +280,10 @@ public class ApiTests
     [TestPriority(2)]
     public async Task DestroySession_RemovesSession()
     {
+        await using TestSessionTracker sessionTracker = new(Client);
+
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync("销毁测试");
+        SessionInfo session = await sessionTracker.CreateSessionAsync("销毁测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
@@ -275,8 +299,10 @@ public class ApiTests
     [TestPriority(1)]
     public async Task SessionCustomTimeout_IsRespected()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Act
-        SessionInfo session = await Client.CreateSessionAsync("短超时测试", 10);
+        SessionInfo session = await sessions.CreateSessionAsync("短超时测试", 10);
 
         // Assert
         Assert.Equal(10, session.TimeoutSeconds);
@@ -295,11 +321,13 @@ public class ApiTests
     [TestPriority(2)]
     public async Task PrewarmLogic_CreatesContainers()
     {
+        await using TestSessionTracker sessions = new(Client);
+
         // Arrange
         SystemStatus beforeStatus = await Client.GetStatusAsync();
 
         // Act
-        SessionInfo session = await Client.CreateSessionAsync("补充测试");
+        SessionInfo session = await sessions.CreateSessionAsync("补充测试");
         await _fixture.WaitForSessionReadyAsync(session.Id);
         
         // 等待预热容器创建
@@ -310,7 +338,5 @@ public class ApiTests
         var totalAfter = afterStatus.AvailableContainers + afterStatus.WarmingContainers;
         Assert.True(totalAfter >= 1, "Should have containers available or warming");
 
-        // Cleanup
-        await Client.DestroySessionAsync(session.Id);
     }
 }

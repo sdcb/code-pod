@@ -1,5 +1,6 @@
 using CodePod.Sdk.Models;
 using Microsoft.Extensions.Logging;
+using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
 
 namespace CodePod.Sdk.Tests;
@@ -43,124 +44,89 @@ public class MaxContainerTests : TestBase
     [Fact]
     public async Task MaxContainers_WhenReached_SessionsAreQueued()
     {
-        var createdSessions = new List<int>();
+        await using TestSessionTracker sessions = new(Client);
+        List<int> createdSessions = new();
 
-        try
+        // Arrange - 创建容器数量等于最大限制
+        for (int i = 0; i < Config.MaxContainers; i++)
         {
-            // Arrange - 创建容器数量等于最大限制
-            for (int i = 0; i < Config.MaxContainers; i++)
-            {
-                SessionInfo session = await Client.CreateSessionAsync($"Session-{i + 1}");
-                createdSessions.Add(session.Id);
-                await Task.Delay(500); // 给容器创建一些时间
-            }
-
-            // 等待所有会话就绪
-            foreach (var sessionId in createdSessions)
-            {
-                try
-                {
-                    await WaitForSessionReadyAsync(sessionId, 60);
-                }
-                catch (TimeoutException)
-                {
-                    // 有些可能在队列中
-                }
-            }
-
-            // Act - 创建第 N+1 个会话
-            SessionInfo queuedSession = await Client.CreateSessionAsync("Queued-Session");
-            createdSessions.Add(queuedSession.Id);
-
-            // 检查状态
-            SystemStatus status = await Client.GetStatusAsync();
-            
-            // Assert
-            if (queuedSession.Status == Models.SessionStatus.Queued)
-            {
-                Assert.Null(queuedSession.ContainerId);
-                Assert.True(queuedSession.QueuePosition > 0);
-            }
-            // 如果不是 Queued，说明有容器在创建时失败或者立即分配了
+            SessionInfo session = await sessions.CreateSessionAsync($"Session-{i + 1}");
+            createdSessions.Add(session.Id);
+            await Task.Delay(500); // 给容器创建一些时间
         }
-        finally
+
+        // 等待所有会话就绪
+        foreach (var sessionId in createdSessions)
         {
-            // Cleanup
-            foreach (var sessionId in createdSessions)
+            try
             {
-                try
-                {
-                    await Client.DestroySessionAsync(sessionId);
-                }
-                catch
-                {
-                    // Ignore cleanup errors
-                }
+                await WaitForSessionReadyAsync(sessionId, 60);
+            }
+            catch (TimeoutException)
+            {
+                // 有些可能在队列中
             }
         }
+
+        // Act - 创建第 N+1 个会话
+        SessionInfo queuedSession = await sessions.CreateSessionAsync("Queued-Session");
+        createdSessions.Add(queuedSession.Id);
+
+        // 检查状态
+        SystemStatus status = await Client.GetStatusAsync();
+        
+        // Assert
+        if (queuedSession.Status == Models.SessionStatus.Queued)
+        {
+            Assert.Null(queuedSession.ContainerId);
+            Assert.True(queuedSession.QueuePosition > 0);
+        }
+        // 如果不是 Queued，说明有容器在创建时失败或者立即分配了
     }
 
     [Fact]
     public async Task QueuedSession_GetsContainerWhenReleased()
     {
-        var createdSessions = new List<int>();
+        await using TestSessionTracker sessions = new(Client);
+        List<int> createdSessions = new();
 
-        try
+        // Arrange - 填满容器池
+        for (int i = 0; i < Config.MaxContainers; i++)
         {
-            // Arrange - 填满容器池
-            for (int i = 0; i < Config.MaxContainers; i++)
-            {
-                SessionInfo session = await Client.CreateSessionAsync($"Fill-Session-{i + 1}");
-                createdSessions.Add(session.Id);
-                await Task.Delay(500);
-            }
+            SessionInfo session = await sessions.CreateSessionAsync($"Fill-Session-{i + 1}");
+            createdSessions.Add(session.Id);
+            await Task.Delay(500);
+        }
 
-            // 等待容器分配
+        // 等待容器分配
+        await Task.Delay(5000);
+
+        // 创建一个应该被排队的会话
+        SessionInfo queuedSession = await sessions.CreateSessionAsync("Should-Be-Queued");
+        createdSessions.Add(queuedSession.Id);
+
+        // 如果会话被排队
+        if (queuedSession.Status == Models.SessionStatus.Queued)
+        {
+            // Act - 销毁第一个会话，释放容器
+            await Client.DestroySessionAsync(createdSessions[0]);
+
+            // 等待队列处理
             await Task.Delay(5000);
 
-            // 创建一个应该被排队的会话
-            SessionInfo queuedSession = await Client.CreateSessionAsync("Should-Be-Queued");
-            createdSessions.Add(queuedSession.Id);
-
-            // 如果会话被排队
-            if (queuedSession.Status == Models.SessionStatus.Queued)
+            // Assert - 检查排队的会话是否获得了容器
+            SessionInfo updatedSession = await Client.GetSessionAsync(queuedSession.Id);
+            
+            // 多次重试检查
+            for (int retry = 0; retry < 10 && string.IsNullOrEmpty(updatedSession.ContainerId); retry++)
             {
-                // Act - 销毁第一个会话，释放容器
-                await Client.DestroySessionAsync(createdSessions[0]);
-                createdSessions.RemoveAt(0);
-
-                // 等待队列处理
-                await Task.Delay(5000);
-
-                // Assert - 检查排队的会话是否获得了容器
-                SessionInfo updatedSession = await Client.GetSessionAsync(queuedSession.Id);
-                
-                // 多次重试检查
-                for (int retry = 0; retry < 10 && string.IsNullOrEmpty(updatedSession.ContainerId); retry++)
-                {
-                    await Task.Delay(1000);
-                    updatedSession = await Client.GetSessionAsync(queuedSession.Id);
-                }
-
-                if (updatedSession.Status == Models.SessionStatus.Active)
-                {
-                    Assert.NotNull(updatedSession.ContainerId);
-                }
+                await Task.Delay(1000);
+                updatedSession = await Client.GetSessionAsync(queuedSession.Id);
             }
-        }
-        finally
-        {
-            // Cleanup
-            foreach (var sessionId in createdSessions)
+
+            if (updatedSession.Status == Models.SessionStatus.Active)
             {
-                try
-                {
-                    await Client.DestroySessionAsync(sessionId);
-                }
-                catch
-                {
-                    // Ignore cleanup errors
-                }
+                Assert.NotNull(updatedSession.ContainerId);
             }
         }
     }

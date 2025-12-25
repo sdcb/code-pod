@@ -35,7 +35,7 @@ public class ResourceLimitsTests : IAsyncLifetime
         var workDir = _isWindowsContainer ? "C:\\app" : "/app";
         var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
 
-        var config = new CodePodConfig
+        CodePodConfig config = new()
         {
             DockerEndpoint = settings.DockerEndpoint,
             IsWindowsContainer = _isWindowsContainer,
@@ -104,7 +104,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     public async Task CreateSession_WithCustomLimits_Succeeds()
     {
         // Arrange
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "自定义限制测试",
             ResourceLimits = new ResourceLimits
@@ -129,7 +129,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     public async Task CreateSession_WithMinimalLimits_Succeeds()
     {
         // Arrange
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "最小限制测试",
             ResourceLimits = ResourceLimits.Minimal
@@ -148,7 +148,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     public async Task CreateSession_ExceedingMaxLimits_ThrowsException()
     {
         // Arrange
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "超限测试",
             ResourceLimits = new ResourceLimits
@@ -171,7 +171,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     public async Task MemoryLimit_EnforcedByDocker()
     {
         // Arrange - 使用较小的内存限制
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "内存限制验证",
             ResourceLimits = new ResourceLimits
@@ -205,7 +205,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     public async Task PidsLimit_EnforcedByDocker()
     {
         // Arrange - 使用较小的进程数限制
-        var options = new SessionOptions
+        SessionOptions options = new()
         {
             Name = "进程数限制验证",
             ResourceLimits = new ResourceLimits

@@ -37,7 +37,7 @@ public static class TestSettings
                 .AddEnvironmentVariables(prefix: "CODEPOD_")
                 .Build();
 
-            var settings = new CodePodTestSettings();
+            CodePodTestSettings settings = new();
             configuration.GetSection("CodePodTest").Bind(settings);
 
             Cached = settings;
