@@ -1,16 +1,17 @@
 using CodePod.Sdk.Configuration;
+using CodePod.Sdk.Models;
 
 namespace CodePod.Sdk.Tests.TestInfrastructure;
 
-public sealed class PythonCodePodFixture : CodePodFixtureBase
+public sealed class NetworkIsolationCodePodFixture : CodePodFixtureBase
 {
     protected override CodePodConfig CreateConfig(CodePodTestSettings settings)
     {
         CodePodConfig config = CodePodTestSupport.CreateDefaultConfig(settings);
-        config.Image = settings.IsWindowsContainer ? settings.PythonWindowsImage : settings.PythonLinuxImage;
-        config.PrewarmCount = 1;
+        config.PrewarmCount = 0;
         config.SessionTimeoutSeconds = 300;
-        config.LabelPrefix = "codepod-cmdarray-test";
+        config.LabelPrefix = "codepod-network-test";
+        config.DefaultNetworkMode = NetworkMode.None;
         return config;
     }
 }

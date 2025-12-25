@@ -2,15 +2,15 @@ using CodePod.Sdk.Configuration;
 
 namespace CodePod.Sdk.Tests.TestInfrastructure;
 
-public sealed class PythonCodePodFixture : CodePodFixtureBase
+public sealed class MaxContainerCodePodFixture : CodePodFixtureBase
 {
     protected override CodePodConfig CreateConfig(CodePodTestSettings settings)
     {
         CodePodConfig config = CodePodTestSupport.CreateDefaultConfig(settings);
-        config.Image = settings.IsWindowsContainer ? settings.PythonWindowsImage : settings.PythonLinuxImage;
-        config.PrewarmCount = 1;
+        config.PrewarmCount = 0;
+        config.MaxContainers = 3;
         config.SessionTimeoutSeconds = 300;
-        config.LabelPrefix = "codepod-cmdarray-test";
+        config.LabelPrefix = "codepod-maxtest";
         return config;
     }
 }

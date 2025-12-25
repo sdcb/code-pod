@@ -1,5 +1,4 @@
 using CodePod.Sdk.Models;
-using Microsoft.Extensions.Logging;
 using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
 
@@ -8,37 +7,17 @@ namespace CodePod.Sdk.Tests;
 /// <summary>
 /// 容器数量限制测试 - 对应 test/MaxContainerTest.cs
 /// </summary>
-public class MaxContainerTests : TestBase
+[Collection(MaxContainerCollection.Name)]
+public class MaxContainerTests
 {
-    public override async Task InitializeAsync()
+    private readonly MaxContainerCodePodFixture _fixture;
+
+    private CodePodClient Client => _fixture.Client;
+    private int MaxContainers => _fixture.Config.MaxContainers;
+
+    public MaxContainerTests(MaxContainerCodePodFixture fixture)
     {
-        LoggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
-        {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Information);
-        });
-
-        CodePodTestSettings settings = TestSettings.Load();
-        bool isWindowsContainer = settings.IsWindowsContainer;
-
-        Config = new Configuration.CodePodConfig
-        {
-            IsWindowsContainer = isWindowsContainer,
-            DockerEndpoint = settings.DockerEndpoint,
-            Image = isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage,
-            PrewarmCount = 0,
-            MaxContainers = 3,
-            SessionTimeoutSeconds = 300,
-            WorkDir = isWindowsContainer ? "C:\\app" : "/app",
-            LabelPrefix = "codepod-maxtest"
-        };
-
-        Client = new CodePodClientBuilder()
-            .WithConfig(Config)
-            .WithLogging(LoggerFactory)
-            .Build();
-
-        await Client.InitializeAsync();
+        _fixture = fixture;
     }
 
     [Fact]
@@ -46,7 +25,7 @@ public class MaxContainerTests : TestBase
     {
         await using TestSessionTracker sessions = new(Client);
         // Arrange - 创建容器数量等于最大限制
-        for (int i = 0; i < Config.MaxContainers; i++)
+        for (int i = 0; i < MaxContainers; i++)
         {
             await sessions.CreateSessionAsync(new SessionOptions { Name = $"Session-{i + 1}" });
         }
@@ -63,7 +42,7 @@ public class MaxContainerTests : TestBase
         List<int> createdSessions = new();
 
         // Arrange - 填满容器池
-        for (int i = 0; i < Config.MaxContainers; i++)
+        for (int i = 0; i < MaxContainers; i++)
         {
             SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = $"Fill-Session-{i + 1}" });
             createdSessions.Add(session.Id);

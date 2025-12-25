@@ -1,6 +1,5 @@
-using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Models;
-using Microsoft.Extensions.Logging;
+using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -10,85 +9,33 @@ namespace CodePod.Sdk.Tests;
 /// 使用量计量功能测试
 /// 验证 Docker Stats API 获取资源使用情况
 /// </summary>
-public class UsageMeteringTests : IAsyncLifetime
+[Collection(CodePodCollection.Name)]
+public class UsageMeteringTests
 {
     private readonly ITestOutputHelper _output;
-    private CodePodClient _client = null!;
-    private ILoggerFactory _loggerFactory = null!;
-    private bool _isWindowsContainer;
+    private readonly CodePodFixture _fixture;
 
-    public UsageMeteringTests(ITestOutputHelper output)
+    private CodePodClient Client => _fixture.Client;
+    private bool IsWindowsContainer => _fixture.IsWindowsContainer;
+
+    public UsageMeteringTests(CodePodFixture fixture, ITestOutputHelper output)
     {
+        _fixture = fixture;
         _output = output;
-    }
-
-    public async Task InitializeAsync()
-    {
-        _loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Information);
-        });
-
-        CodePodTestSettings settings = TestSettings.Load();
-        _isWindowsContainer = settings.IsWindowsContainer;
-        string workDir = _isWindowsContainer ? "C:\\app" : "/app";
-        string image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
-
-        CodePodConfig config = new()
-        {
-            DockerEndpoint = settings.DockerEndpoint,
-            IsWindowsContainer = _isWindowsContainer,
-            Image = image,
-            PrewarmCount = 2,
-            MaxContainers = 10,
-            SessionTimeoutSeconds = 300,
-            WorkDir = workDir,
-            LabelPrefix = "codepod-metering-test"
-        };
-
-        _client = new CodePodClientBuilder()
-            .WithConfig(config)
-            .WithLogging(_loggerFactory)
-            .Build();
-
-        await _client.InitializeAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        try
-        {
-            IReadOnlyList<SessionInfo> sessions = await _client.GetAllSessionsAsync();
-            foreach (SessionInfo session in sessions)
-            {
-                try
-                {
-                    await _client.DestroySessionAsync(session.Id);
-                }
-                catch { }
-            }
-            await _client.DeleteAllContainersAsync();
-        }
-        catch { }
-        finally
-        {
-            _client.Dispose();
-            _loggerFactory.Dispose();
-        }
     }
 
     [Fact]
     public async Task GetSessionUsage_ReturnsStats()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "使用量测试" });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "使用量测试" });
 
         // 执行一些命令产生使用量
-        await _client.ExecuteCommandAsync(session.Id, "echo 'test'");
+        await Client.ExecuteCommandAsync(session.Id, "echo 'test'");
 
         // Act
-        SessionUsage? usage = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usage = await Client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usage);
@@ -106,19 +53,20 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task GetSessionUsage_AfterWork_ShowsActivity()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "活动使用量测试" });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "活动使用量测试" });
 
         // 获取初始使用量
-        SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usageBefore = await Client.GetSessionUsageAsync(session.Id);
 
         // 执行一些工作
         for (int i = 0; i < 5; i++)
         {
-            await _client.ExecuteCommandAsync(session.Id, $"echo 'Work iteration {i}'");
+            await Client.ExecuteCommandAsync(session.Id, $"echo 'Work iteration {i}'");
         }
 
         // 获取工作后的使用量
-        SessionUsage? usageAfter = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usageAfter = await Client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usageBefore);
@@ -136,20 +84,21 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task GetSessionUsage_MemoryIntensiveWork_ShowsHigherMemory()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "内存密集测试" });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "内存密集测试" });
 
         // 获取初始使用量
-        SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usageBefore = await Client.GetSessionUsageAsync(session.Id);
 
         // 执行内存密集型工作（创建大文件）
-        string command = _isWindowsContainer
+        string command = IsWindowsContainer
             ? "$p = Join-Path $PWD 'testfile.bin'; $bytes = New-Object byte[] (10MB); [IO.File]::WriteAllBytes($p, $bytes); Remove-Item -Force $p"
             : "dd if=/dev/zero of=/tmp/testfile bs=1M count=10 2>/dev/null && rm /tmp/testfile";
 
-        await _client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
+        await Client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
 
         // 获取工作后的使用量
-        SessionUsage? usageAfter = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usageAfter = await Client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usageBefore);
@@ -164,10 +113,11 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task SessionUsage_HasValidTimestamp()
     {
         // Arrange
-        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "时间戳测试" });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "时间戳测试" });
 
         // Act
-        SessionUsage? usage = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usage = await Client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usage);
@@ -182,28 +132,29 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Act & Assert
         await Assert.ThrowsAsync<CodePod.Sdk.Exceptions.SessionNotFoundException>(
-            () => _client.GetSessionUsageAsync(99999));
+            () => Client.GetSessionUsageAsync(99999));
     }
 
     [Fact]
     public async Task MultipleSession_EachHasIndependentUsage()
     {
         // Arrange
-        SessionInfo session1 = await _client.CreateSessionAsync(new SessionOptions { Name = "会话1" });
-        SessionInfo session2 = await _client.CreateSessionAsync(new SessionOptions { Name = "会话2" });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session1 = await sessions.CreateSessionAsync(new SessionOptions { Name = "会话1" });
+        SessionInfo session2 = await sessions.CreateSessionAsync(new SessionOptions { Name = "会话2" });
 
         // 在会话1执行更多工作
         for (int i = 0; i < 10; i++)
         {
-            await _client.ExecuteCommandAsync(session1.Id, $"echo 'Session 1 work {i}'");
+            await Client.ExecuteCommandAsync(session1.Id, $"echo 'Session 1 work {i}'");
         }
 
         // 会话2只执行少量工作
-        await _client.ExecuteCommandAsync(session2.Id, "echo 'Session 2 minimal'");
+        await Client.ExecuteCommandAsync(session2.Id, "echo 'Session 2 minimal'");
 
         // Act
-        SessionUsage? usage1 = await _client.GetSessionUsageAsync(session1.Id);
-        SessionUsage? usage2 = await _client.GetSessionUsageAsync(session2.Id);
+        SessionUsage? usage1 = await Client.GetSessionUsageAsync(session1.Id);
+        SessionUsage? usage2 = await Client.GetSessionUsageAsync(session2.Id);
 
         // Assert
         Assert.NotNull(usage1);

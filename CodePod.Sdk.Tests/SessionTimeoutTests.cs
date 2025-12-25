@@ -1,5 +1,6 @@
 using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Models;
+using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
 
 namespace CodePod.Sdk.Tests;
@@ -7,20 +8,27 @@ namespace CodePod.Sdk.Tests;
 /// <summary>
 /// 会话超时测试 - 对应 test/SessionTimeoutTest.cs
 /// </summary>
-public class SessionTimeoutTests : TestBase
+[Collection(SessionTimeoutCollection.Name)]
+public class SessionTimeoutTests
 {
-    public override async Task InitializeAsync()
+    private readonly SessionTimeoutCodePodFixture _fixture;
+
+    private CodePodClient Client => _fixture.Client;
+    private CodePodConfig Config => _fixture.Config;
+    private Microsoft.Extensions.Logging.ILoggerFactory LoggerFactory => _fixture.LoggerFactory;
+    private string WorkDir => _fixture.WorkDir;
+
+    public SessionTimeoutTests(SessionTimeoutCodePodFixture fixture)
     {
-        await base.InitializeAsync();
-        // 为超时测试使用较短的超时时间
-        Config.SessionTimeoutSeconds = 60;
+        _fixture = fixture;
     }
 
     [Fact]
     public async Task CommandExecution_ExtendsTimeout()
     {
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "命令延时测试", TimeoutSeconds = 10 });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "命令延时测试", TimeoutSeconds = 10 });
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         // Wait a bit
@@ -38,13 +46,14 @@ public class SessionTimeoutTests : TestBase
     public async Task FileUpload_ExtendsTimeout()
     {
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "上传延时测试", TimeoutSeconds = 10 });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "上传延时测试", TimeoutSeconds = 10 });
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         await Task.Delay(1000);
 
         // Act
-        await Client.UploadFileAsync(session.Id, GetWorkPath("timeout-test.txt"), "Hello, World!"u8.ToArray());
+        await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("timeout-test.txt"), "Hello, World!"u8.ToArray());
 
         // Assert
         SessionInfo updatedSession = await Client.GetSessionAsync(session.Id);
@@ -55,7 +64,8 @@ public class SessionTimeoutTests : TestBase
     public async Task ListDirectory_ExtendsTimeout()
     {
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "列目录延时测试", TimeoutSeconds = 10 });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "列目录延时测试", TimeoutSeconds = 10 });
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         await Task.Delay(1000);
@@ -72,10 +82,11 @@ public class SessionTimeoutTests : TestBase
     public async Task FileDownload_ExtendsTimeout()
     {
         // Arrange
-        SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "下载延时测试", TimeoutSeconds = 10 });
+        await using TestSessionTracker sessions = new(Client);
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "下载延时测试", TimeoutSeconds = 10 });
 
         // 先上传一个文件
-        string downloadPath = GetWorkPath("download-timeout.txt");
+        string downloadPath = _fixture.GetWorkPath("download-timeout.txt");
         await Client.UploadFileAsync(session.Id, downloadPath, "test content"u8.ToArray());
 
         DateTimeOffset initialLastActivity = (await Client.GetSessionAsync(session.Id)).LastActivityAt;

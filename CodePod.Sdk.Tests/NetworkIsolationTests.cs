@@ -1,6 +1,5 @@
-using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Models;
-using Microsoft.Extensions.Logging;
+using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -10,80 +9,28 @@ namespace CodePod.Sdk.Tests;
 /// 网络隔离功能测试
 /// 验证 Docker 的 none/bridge/host 网络模式
 /// </summary>
-public class NetworkIsolationTests : IAsyncLifetime
+[Collection(NetworkIsolationCollection.Name)]
+public class NetworkIsolationTests
 {
     private readonly ITestOutputHelper _output;
-    private CodePodClient _client = null!;
-    private ILoggerFactory _loggerFactory = null!;
-    private bool _isWindowsContainer;
+    private readonly NetworkIsolationCodePodFixture _fixture;
 
-    public NetworkIsolationTests(ITestOutputHelper output)
+    private CodePodClient Client => _fixture.Client;
+    private bool IsWindowsContainer => _fixture.IsWindowsContainer;
+
+    public NetworkIsolationTests(NetworkIsolationCodePodFixture fixture, ITestOutputHelper output)
     {
+        _fixture = fixture;
         _output = output;
-    }
-
-    public async Task InitializeAsync()
-    {
-        _loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Information);
-        });
-
-        CodePodTestSettings settings = TestSettings.Load();
-        _isWindowsContainer = settings.IsWindowsContainer;
-        string workDir = _isWindowsContainer ? "C:\\app" : "/app";
-        string image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
-
-        CodePodConfig config = new()
-        {
-            DockerEndpoint = settings.DockerEndpoint,
-            IsWindowsContainer = _isWindowsContainer,
-            Image = image,
-            PrewarmCount = 0, // 不预热
-            MaxContainers = 10,
-            SessionTimeoutSeconds = 300,
-            WorkDir = workDir,
-            LabelPrefix = "codepod-network-test",
-            DefaultNetworkMode = NetworkMode.None // 默认禁用网络
-        };
-
-        _client = new CodePodClientBuilder()
-            .WithConfig(config)
-            .WithLogging(_loggerFactory)
-            .Build();
-
-        await _client.InitializeAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        try
-        {
-            IReadOnlyList<SessionInfo> sessions = await _client.GetAllSessionsAsync();
-            foreach (SessionInfo session in sessions)
-            {
-                try
-                {
-                    await _client.DestroySessionAsync(session.Id);
-                }
-                catch { }
-            }
-            await _client.DeleteAllContainersAsync();
-        }
-        catch { }
-        finally
-        {
-            _client.Dispose();
-            _loggerFactory.Dispose();
-        }
     }
 
     [Fact]
     public async Task NetworkMode_None_BlocksNetworkAccess()
     {
         // Windows containers do not support network isolation modes
-        if (_isWindowsContainer) return;
+        if (IsWindowsContainer) return;
+
+        await using TestSessionTracker sessions = new(Client);
 
         // Arrange
         SessionOptions options = new()
@@ -92,11 +39,11 @@ public class NetworkIsolationTests : IAsyncLifetime
             NetworkMode = NetworkMode.None
         };
 
-        SessionInfo session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await sessions.CreateSessionAsync(options);
 
         // Act - 尝试访问外部网络
         // 使用 curl 或 wget 测试（可能需要超时）
-        CommandResult result = await _client.ExecuteCommandAsync(
+        CommandResult result = await Client.ExecuteCommandAsync(
             session.Id,
             "timeout 5 curl -s https://www.google.com || echo 'Network access blocked'",
             timeoutSeconds: 15);
@@ -114,7 +61,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     public async Task NetworkMode_None_LocalhostAlsoBlocked()
     {
         // Windows containers do not support network isolation modes
-        if (_isWindowsContainer) return;
+        if (IsWindowsContainer) return;
+
+        await using TestSessionTracker sessions = new(Client);
 
         // Arrange
         SessionOptions options = new()
@@ -123,10 +72,10 @@ public class NetworkIsolationTests : IAsyncLifetime
             NetworkMode = NetworkMode.None
         };
 
-        SessionInfo session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await sessions.CreateSessionAsync(options);
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
-        CommandResult result = await _client.ExecuteCommandAsync(
+        CommandResult result = await Client.ExecuteCommandAsync(
             session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | head -1 || echo 'no_external_interfaces'",
             timeoutSeconds: 10);
@@ -146,7 +95,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     public async Task NetworkMode_Bridge_AllowsNetworkAccess()
     {
         // Windows containers do not support network isolation modes
-        if (_isWindowsContainer) return;
+        if (IsWindowsContainer) return;
+
+        await using TestSessionTracker sessions = new(Client);
 
         // Arrange
         SessionOptions options = new()
@@ -155,10 +106,10 @@ public class NetworkIsolationTests : IAsyncLifetime
             NetworkMode = NetworkMode.Bridge
         };
 
-        SessionInfo session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await sessions.CreateSessionAsync(options);
 
         // Act - 尝试 DNS 解析（不需要实际下载，更快更可靠）
-        CommandResult result = await _client.ExecuteCommandAsync(
+        CommandResult result = await Client.ExecuteCommandAsync(
             session.Id,
             "nslookup google.com 2>&1 || host google.com 2>&1 || echo 'DNS lookup test'",
             timeoutSeconds: 15);
@@ -177,7 +128,9 @@ public class NetworkIsolationTests : IAsyncLifetime
     public async Task NetworkMode_Bridge_HasEthInterface()
     {
         // Windows containers do not support network isolation modes
-        if (_isWindowsContainer) return;
+        if (IsWindowsContainer) return;
+
+        await using TestSessionTracker sessions = new(Client);
 
         // Arrange
         SessionOptions options = new()
@@ -186,10 +139,10 @@ public class NetworkIsolationTests : IAsyncLifetime
             NetworkMode = NetworkMode.Bridge
         };
 
-        SessionInfo session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await sessions.CreateSessionAsync(options);
 
         // Act - 检查网络接口（使用 cat /proc/net/dev 作为备选）
-        CommandResult result = await _client.ExecuteCommandAsync(
+        CommandResult result = await Client.ExecuteCommandAsync(
             session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 || ip addr show 2>/dev/null || echo 'no_network_tools'",
             timeoutSeconds: 10);
@@ -210,13 +163,15 @@ public class NetworkIsolationTests : IAsyncLifetime
     public async Task DefaultSession_UsesConfiguredNetworkMode()
     {
         // Windows containers do not support network isolation modes
-        if (_isWindowsContainer) return;
+        if (IsWindowsContainer) return;
+
+        await using TestSessionTracker sessions = new(Client);
 
         // Arrange - 客户端配置默认使用 None
-        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "默认网络模式测试" });
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "默认网络模式测试" });
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
-        CommandResult result = await _client.ExecuteCommandAsync(
+        CommandResult result = await Client.ExecuteCommandAsync(
             session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | head -1 || echo 'no_external_interfaces'",
             timeoutSeconds: 10);
@@ -235,17 +190,19 @@ public class NetworkIsolationTests : IAsyncLifetime
     public async Task NetworkMode_CanBeOverriddenPerSession()
     {
         // Windows containers do not support network isolation modes
-        if (_isWindowsContainer) return;
+        if (IsWindowsContainer) return;
+
+        await using TestSessionTracker sessions = new(Client);
 
         // 测试 1: 创建 None 模式会话
-        SessionInfo sessionNone = await _client.CreateSessionAsync(new SessionOptions
+        SessionInfo sessionNone = await sessions.CreateSessionAsync(new SessionOptions
         {
             Name = "None 模式",
             NetworkMode = NetworkMode.None
         });
 
         // 测试 2: 创建 Bridge 模式会话
-        SessionInfo sessionBridge = await _client.CreateSessionAsync(new SessionOptions
+        SessionInfo sessionBridge = await sessions.CreateSessionAsync(new SessionOptions
         {
             Name = "Bridge 模式",
             NetworkMode = NetworkMode.Bridge
@@ -253,12 +210,12 @@ public class NetworkIsolationTests : IAsyncLifetime
 
         // 验证两个会话有不同的网络配置
         // 使用 /proc/net/dev 来检查网络接口
-        CommandResult resultNone = await _client.ExecuteCommandAsync(
+        CommandResult resultNone = await Client.ExecuteCommandAsync(
             sessionNone.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | wc -l",
             timeoutSeconds: 10);
 
-        CommandResult resultBridge = await _client.ExecuteCommandAsync(
+        CommandResult resultBridge = await Client.ExecuteCommandAsync(
             sessionBridge.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | wc -l",
             timeoutSeconds: 10);

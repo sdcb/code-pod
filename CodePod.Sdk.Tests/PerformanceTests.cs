@@ -8,8 +8,19 @@ namespace CodePod.Sdk.Tests;
 /// <summary>
 /// 性能测试 - 对应 test/PerformanceTest.cs
 /// </summary>
-public class PerformanceTests : TestBase
+[Collection(CodePodCollection.Name)]
+public class PerformanceTests
 {
+    private readonly CodePodFixture _fixture;
+
+    private CodePodClient Client => _fixture.Client;
+    private string WorkDir => _fixture.WorkDir;
+
+    public PerformanceTests(CodePodFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
     private const int TestRounds = 3;
 
     [Fact]
@@ -89,7 +100,7 @@ public class PerformanceTests : TestBase
             Assert.Equal(0, result.ExitCode);
 
             // 3. 上传一个文件
-            string filePath = GetWorkPath("perf-test.txt");
+            string filePath = _fixture.GetWorkPath("perf-test.txt");
             await Client.UploadFileAsync(
                 session.Id,
                 filePath,

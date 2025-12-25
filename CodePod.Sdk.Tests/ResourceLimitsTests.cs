@@ -1,6 +1,5 @@
-using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Models;
-using Microsoft.Extensions.Logging;
+using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -10,88 +9,27 @@ namespace CodePod.Sdk.Tests;
 /// 资源限制功能测试
 /// 验证内存限制、CPU 限制、进程数限制
 /// </summary>
-public class ResourceLimitsTests : IAsyncLifetime
+[Collection(ResourceLimitsCollection.Name)]
+public class ResourceLimitsTests
 {
     private readonly ITestOutputHelper _output;
-    private CodePodClient _client = null!;
-    private ILoggerFactory _loggerFactory = null!;
-    private bool _isWindowsContainer;
+    private readonly ResourceLimitsCodePodFixture _fixture;
 
-    public ResourceLimitsTests(ITestOutputHelper output)
+    private CodePodClient Client => _fixture.Client;
+    private bool IsWindowsContainer => _fixture.IsWindowsContainer;
+
+    public ResourceLimitsTests(ResourceLimitsCodePodFixture fixture, ITestOutputHelper output)
     {
+        _fixture = fixture;
         _output = output;
-    }
-
-    public async Task InitializeAsync()
-    {
-        _loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Information);
-        });
-
-        CodePodTestSettings settings = TestSettings.Load();
-        _isWindowsContainer = settings.IsWindowsContainer;
-        string workDir = _isWindowsContainer ? "C:\\app" : "/app";
-        string image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
-
-        CodePodConfig config = new()
-        {
-            DockerEndpoint = settings.DockerEndpoint,
-            IsWindowsContainer = _isWindowsContainer,
-            Image = image,
-            PrewarmCount = 0, // 不预热，便于测试自定义资源限制
-            MaxContainers = 10,
-            SessionTimeoutSeconds = 300,
-            WorkDir = workDir,
-            LabelPrefix = "codepod-reslimit-test",
-            // 系统最大资源限制
-            MaxResourceLimits = new ResourceLimits
-            {
-                MemoryBytes = 1024 * 1024 * 1024, // 1GB
-                CpuCores = 2.0,
-                MaxProcesses = 200
-            },
-            // 默认资源限制
-            DefaultResourceLimits = ResourceLimits.Standard
-        };
-
-        _client = new CodePodClientBuilder()
-            .WithConfig(config)
-            .WithLogging(_loggerFactory)
-            .Build();
-
-        await _client.InitializeAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        try
-        {
-            IReadOnlyList<SessionInfo> sessions = await _client.GetAllSessionsAsync();
-            foreach (SessionInfo session in sessions)
-            {
-                try
-                {
-                    await _client.DestroySessionAsync(session.Id);
-                }
-                catch { }
-            }
-            await _client.DeleteAllContainersAsync();
-        }
-        catch { }
-        finally
-        {
-            _client.Dispose();
-            _loggerFactory.Dispose();
-        }
     }
 
     [Fact]
     public async Task CreateSession_WithDefaultLimits_Succeeds()
     {
+        await using TestSessionTracker sessions = new(Client);
         // Act
-        SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "默认限制测试" });
+        SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "默认限制测试" });
 
         // Assert
         Assert.NotNull(session);
@@ -102,6 +40,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     [Fact]
     public async Task CreateSession_WithCustomLimits_Succeeds()
     {
+        await using TestSessionTracker sessions = new(Client);
         // Arrange
         SessionOptions options = new()
         {
@@ -115,7 +54,7 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         // Act
-        SessionInfo session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await sessions.CreateSessionAsync(options);
 
         // Assert
         Assert.NotNull(session);
@@ -126,6 +65,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     [Fact]
     public async Task CreateSession_WithMinimalLimits_Succeeds()
     {
+        await using TestSessionTracker sessions = new(Client);
         // Arrange
         SessionOptions options = new()
         {
@@ -134,7 +74,7 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         // Act
-        SessionInfo session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await sessions.CreateSessionAsync(options);
 
         // Assert
         Assert.NotNull(session);
@@ -158,7 +98,7 @@ public class ResourceLimitsTests : IAsyncLifetime
 
         // Act & Assert
         ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _client.CreateSessionAsync(options));
+            () => Client.CreateSessionAsync(options));
         
         Assert.Contains("memory", ex.Message.ToLower());
         _output.WriteLine($"Expected exception: {ex.Message}");
@@ -167,6 +107,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     [Fact]
     public async Task MemoryLimit_EnforcedByDocker()
     {
+        await using TestSessionTracker sessions = new(Client);
         // Arrange - 使用较小的内存限制
         SessionOptions options = new()
         {
@@ -179,11 +120,11 @@ public class ResourceLimitsTests : IAsyncLifetime
             }
         };
 
-        SessionInfo session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await sessions.CreateSessionAsync(options);
 
         // Act - 尝试分配超过限制的内存（这可能会失败或被 OOM killer 杀死）
         // 使用 dotnet 分配内存
-        CommandResult result = await _client.ExecuteCommandAsync(
+        CommandResult result = await Client.ExecuteCommandAsync(
             session.Id,
             "dotnet --version && echo 'Memory limit test passed'",
             timeoutSeconds: 30);
@@ -200,6 +141,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     [Fact]
     public async Task PidsLimit_EnforcedByDocker()
     {
+        await using TestSessionTracker sessions = new(Client);
         // Arrange - 使用较小的进程数限制
         SessionOptions options = new()
         {
@@ -212,14 +154,14 @@ public class ResourceLimitsTests : IAsyncLifetime
             }
         };
 
-        SessionInfo session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await sessions.CreateSessionAsync(options);
 
         // Act - 尝试创建多个子进程（可能会达到限制）
-        string command = _isWindowsContainer
+        string command = IsWindowsContainer
             ? "1..5 | ForEach-Object { Write-Output $_ }"
             : "for i in $(seq 1 5); do echo $i; done";
 
-        CommandResult result = await _client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
+        CommandResult result = await Client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
 
         // Assert
         _output.WriteLine($"Exit code: {result.ExitCode}");
