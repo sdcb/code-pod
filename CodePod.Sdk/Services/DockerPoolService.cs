@@ -100,10 +100,10 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 
         // 计算需要预热的容器数量
         (int idle, int busy, int warming, int _) = await GetCountByStatusAsync(cancellationToken);
-        var currentUsable = idle + busy + warming;
-        var needToWarm = Math.Max(0, _config.PrewarmCount - idle);
-        var canWarm = Math.Max(0, _config.MaxContainers - currentUsable);
-        var toWarm = Math.Min(needToWarm, canWarm);
+        int currentUsable = idle + busy + warming;
+        int needToWarm = Math.Max(0, _config.PrewarmCount - idle);
+        int canWarm = Math.Max(0, _config.MaxContainers - currentUsable);
+        int toWarm = Math.Min(needToWarm, canWarm);
 
         if (toWarm > 0)
         {
@@ -122,7 +122,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         }
 
         _initialized = true;
-        var containerCount = await GetContainerCountAsync(cancellationToken);
+        int containerCount = await GetContainerCountAsync(cancellationToken);
         _logger?.LogInformation("Docker pool initialization completed, {Count} containers ready", containerCount);
         NotifyStatusChanged();
     }
@@ -189,10 +189,10 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             try
             {
                 (int idleCount, int busyCount, int warmingCount, int _) = await GetCountByStatusAsync(cancellationToken);
-                var activeCount = idleCount + busyCount + warmingCount;
+                int activeCount = idleCount + busyCount + warmingCount;
 
-                var currentAvailable = idleCount + warmingCount;
-                var maxCanCreate = _config.MaxContainers - activeCount;
+                int currentAvailable = idleCount + warmingCount;
+                int maxCanCreate = _config.MaxContainers - activeCount;
                 neededCount = Math.Min(_config.PrewarmCount - currentAvailable, maxCanCreate);
 
                 if (neededCount <= 0)
@@ -262,7 +262,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         try
         {
             (int idleCount, int busyCount, int warmingCount, int _) = await GetCountByStatusAsync(cancellationToken);
-            var activeCount = idleCount + busyCount + warmingCount;
+            int activeCount = idleCount + busyCount + warmingCount;
             if (activeCount >= _config.MaxContainers)
             {
                 throw new InvalidOperationException($"Max container count {_config.MaxContainers} reached");
@@ -331,7 +331,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
     private async Task<ContainerInfo> CreateAndWarmContainerAsync(CancellationToken cancellationToken)
     {
         // 创建占位容器信息（预热中状态）
-        var tempId = Guid.NewGuid().ToString("N");
+        string tempId = Guid.NewGuid().ToString("N");
         ContainerInfo warmingContainer = new()
         {
             ContainerId = tempId,

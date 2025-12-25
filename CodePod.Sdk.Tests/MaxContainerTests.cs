@@ -19,7 +19,7 @@ public class MaxContainerTests : TestBase
         });
 
         CodePodTestSettings settings = TestSettings.Load();
-        var isWindowsContainer = settings.IsWindowsContainer;
+        bool isWindowsContainer = settings.IsWindowsContainer;
 
         Config = new Configuration.CodePodConfig
         {

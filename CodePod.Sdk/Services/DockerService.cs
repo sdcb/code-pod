@@ -147,7 +147,7 @@ public class DockerService : IDockerService
             // 使用指定的网络模式或默认值
             NetworkMode network = networkMode ?? _config.DefaultNetworkMode;
 
-            var containerName = $"{_config.LabelPrefix}-{Guid.NewGuid():N}";
+            string containerName = $"{_config.LabelPrefix}-{Guid.NewGuid():N}";
             Dictionary<string, string> labels = new()
             {
                 [$"{_config.LabelPrefix}.managed"] = "true",
@@ -198,7 +198,7 @@ public class DockerService : IDockerService
                 limits.MemoryBytes / 1024 / 1024, limits.CpuCores, limits.MaxProcesses, network);
 
             // 创建工作目录和 artifacts 目录
-            var mkdirCmd = _config.GetMkdirCommand(_config.WorkDir, $"{_config.WorkDir}/{_config.ArtifactsDir}");
+            string mkdirCmd = _config.GetMkdirCommand(_config.WorkDir, $"{_config.WorkDir}/{_config.ArtifactsDir}");
             await ExecuteCommandAsync(response.ID, mkdirCmd, "/", 30, cancellationToken);
 
             return new ContainerInfo
@@ -258,7 +258,7 @@ public class DockerService : IDockerService
             {
                 ContainerInspectResponse inspect = await _client.Containers.InspectContainerAsync(containerId, cancellationToken);
 
-                if (!inspect.Config.Labels.TryGetValue($"{_config.LabelPrefix}.managed", out var managed) || managed != "true")
+                if (!inspect.Config.Labels.TryGetValue($"{_config.LabelPrefix}.managed", out string? managed) || managed != "true")
                 {
                     return null;
                 }
@@ -413,7 +413,7 @@ public class DockerService : IDockerService
         {
             stream = await _client.Exec.StartAndAttachContainerExecAsync(execId, tty: false, cts.Token);
 
-            var buffer = new byte[4096];
+            byte[] buffer = new byte[4096];
 
             while (!cts.Token.IsCancellationRequested)
             {
@@ -424,7 +424,7 @@ public class DockerService : IDockerService
                     break;
                 }
 
-                var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                string text = Encoding.UTF8.GetString(buffer, 0, result.Count);
 
                 if (result.Target == MultiplexedStream.TargetStream.StandardOut)
                 {
@@ -460,7 +460,7 @@ public class DockerService : IDockerService
     {
         await WrapDockerOperationAsync("UploadFile", async () =>
         {
-            var relativePath = containerPath.TrimStart('/');
+            string relativePath = containerPath.TrimStart('/');
             await using MemoryStream tarStream = new();
             using (IWriter writer = WriterFactory.Open(tarStream, ArchiveType.Tar, new WriterOptions(CompressionType.None) { LeaveStreamOpen = true }))
             {
@@ -502,11 +502,11 @@ public class DockerService : IDockerService
                     if (string.IsNullOrWhiteSpace(entry.Key))
                         continue;
 
-                    var cleanKey = entry.Key.TrimStart('.', '/');
+                    string cleanKey = entry.Key.TrimStart('.', '/');
                     if (string.IsNullOrEmpty(cleanKey))
                         continue;
 
-                    var fullPath = path.TrimEnd('/') + "/" + cleanKey.TrimEnd('/');
+                    string fullPath = path.TrimEnd('/') + "/" + cleanKey.TrimEnd('/');
                     if (fullPath.TrimEnd('/') == path.TrimEnd('/'))
                         continue;
 
@@ -628,15 +628,15 @@ public class DockerService : IDockerService
     private (string output, bool truncated) TruncateOutput(string output)
     {
         OutputOptions options = _config.OutputOptions;
-        var bytes = Encoding.UTF8.GetBytes(output);
+        byte[] bytes = Encoding.UTF8.GetBytes(output);
 
         if (bytes.Length <= options.MaxOutputBytes)
         {
             return (output, false);
         }
 
-        var halfSize = options.MaxOutputBytes / 2;
-        var omittedBytes = bytes.Length - options.MaxOutputBytes;
+        int halfSize = options.MaxOutputBytes / 2;
+        int omittedBytes = bytes.Length - options.MaxOutputBytes;
 
         return options.Strategy switch
         {
@@ -664,7 +664,7 @@ public class DockerService : IDockerService
     {
         StringBuilder stdout = new();
         StringBuilder stderr = new();
-        var buffer = new byte[8192];
+        byte[] buffer = new byte[8192];
 
         while (true)
         {
@@ -672,7 +672,7 @@ public class DockerService : IDockerService
             if (result.EOF || result.Count == 0)
                 break;
 
-            var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            string text = Encoding.UTF8.GetString(buffer, 0, result.Count);
             if (result.Target == MultiplexedStream.TargetStream.StandardOut)
             {
                 stdout.Append(text);
@@ -734,7 +734,7 @@ public class DockerService : IDockerService
 
     private static bool IsDockerConnectionError(Exception ex)
     {
-        var message = ex.Message.ToLower();
+        string message = ex.Message.ToLower();
         return message.Contains("no connection") ||
                message.Contains("connection refused") ||
                message.Contains("unable to connect") ||

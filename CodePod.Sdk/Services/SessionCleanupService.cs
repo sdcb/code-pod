@@ -60,7 +60,7 @@ public class SessionCleanupService : ISessionCleanupService
             }
 
             // 计算超时时间
-            var timeoutSeconds = session.TimeoutSeconds ?? _config.SessionTimeoutSeconds;
+            int timeoutSeconds = session.TimeoutSeconds ?? _config.SessionTimeoutSeconds;
             TimeSpan timeout = TimeSpan.FromSeconds(timeoutSeconds);
 
             if (now - session.LastActivityAt > timeout)

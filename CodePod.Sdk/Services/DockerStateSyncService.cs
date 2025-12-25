@@ -69,7 +69,7 @@ public class DockerStateSyncService : IDockerStateSyncService
 
         // 1. 处理数据库中存在但 Docker 中不存在的容器（已被删除）
         List<string> deletedContainerIds = dbContainerIds.Except(dockerContainerIds).ToList();
-        foreach (var containerId in deletedContainerIds)
+        foreach (string containerId in deletedContainerIds)
         {
             _logger?.LogInformation("Container {ContainerId} no longer exists in Docker, removing from database",
                 containerId.Length >= 12 ? containerId[..12] : containerId);
@@ -95,10 +95,10 @@ public class DockerStateSyncService : IDockerStateSyncService
 
         // 2. 处理 Docker 中存在但数据库中不存在的容器（新发现或遗留）
         List<string> newContainerIds = dockerContainerIds.Except(dbContainerIds).ToList();
-        foreach (var containerId in newContainerIds)
+        foreach (string containerId in newContainerIds)
         {
             ContainerInfo dockerContainer = dockerContainers.First(c => c.ContainerId == containerId);
-            var isRunning = dockerContainer.DockerStatus == "running";
+            bool isRunning = dockerContainer.DockerStatus == "running";
 
             if (isRunning)
             {
@@ -143,11 +143,11 @@ public class DockerStateSyncService : IDockerStateSyncService
 
         // 3. 更新数据库中已存在容器的状态
         List<string> existingContainerIds = dbContainerIds.Intersect(dockerContainerIds).ToList();
-        foreach (var containerId in existingContainerIds)
+        foreach (string containerId in existingContainerIds)
         {
             ContainerInfo dockerContainer = dockerContainers.First(c => c.ContainerId == containerId);
             ContainerEntity dbContainer = dbContainers.First(c => c.ContainerId == containerId);
-            var isRunning = dockerContainer.DockerStatus == "running";
+            bool isRunning = dockerContainer.DockerStatus == "running";
 
             if (!isRunning)
             {
@@ -188,7 +188,7 @@ public class DockerStateSyncService : IDockerStateSyncService
                     ? ContainerStatus.Busy
                     : ContainerStatus.Idle;
 
-                var needsUpdate = false;
+                bool needsUpdate = false;
 
                 if (dbContainer.Status != expectedStatus || dbContainer.Status == ContainerStatus.Warming || dbContainer.Status == ContainerStatus.Destroying)
                 {
@@ -238,7 +238,7 @@ public class DockerStateSyncService : IDockerStateSyncService
 
             foreach (SessionEntity? session in orphanedSessions)
             {
-                var containerIdShort = session.ContainerId != null
+                string containerIdShort = session.ContainerId != null
                     ? session.ContainerId[..Math.Min(12, session.ContainerId.Length)]
                     : "(null)";
                                 _logger?.LogInformation("Session {SessionId} references non-existent container {ContainerId}, marking as destroyed",
@@ -251,7 +251,7 @@ public class DockerStateSyncService : IDockerStateSyncService
 
         await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            var finalCount = await context.Containers.CountAsync(cancellationToken);
+            int finalCount = await context.Containers.CountAsync(cancellationToken);
             _logger?.LogInformation("Docker state synchronization completed. {Count} containers in database", finalCount);
         }
     }

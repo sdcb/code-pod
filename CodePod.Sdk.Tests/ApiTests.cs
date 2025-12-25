@@ -120,7 +120,7 @@ public class ApiTests
 
         // Assert
         Assert.Equal(0, result.ExitCode);
-        var lines = result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        string[] lines = result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(3, lines.Length);
     }
 
@@ -171,8 +171,8 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "上传文件测试" });
-        var content = "Hello, this is a test file!\n测试中文内容";
-        var bytes = Encoding.UTF8.GetBytes(content);
+        string content = "Hello, this is a test file!\n测试中文内容";
+        byte[] bytes = Encoding.UTF8.GetBytes(content);
 
         // Act
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("test.txt"), bytes);
@@ -190,7 +190,7 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "列目录测试" });
-        var content = "test content";
+        string content = "test content";
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("listtest.txt"), Encoding.UTF8.GetBytes(content));
 
         // Act
@@ -209,12 +209,12 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "下载文件测试" });
-        var originalContent = "Hello, this is a test file!\n测试中文内容";
+        string originalContent = "Hello, this is a test file!\n测试中文内容";
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("download.txt"), Encoding.UTF8.GetBytes(originalContent));
 
         // Act
-        var downloadedBytes = await Client.DownloadFileAsync(session.Id, _fixture.GetWorkPath("download.txt"));
-        var downloadedContent = Encoding.UTF8.GetString(downloadedBytes);
+        byte[] downloadedBytes = await Client.DownloadFileAsync(session.Id, _fixture.GetWorkPath("download.txt"));
+        string downloadedContent = Encoding.UTF8.GetString(downloadedBytes);
 
         // Assert
         Assert.Contains("Hello", downloadedContent);
@@ -324,7 +324,7 @@ public class ApiTests
         SystemStatus afterStatus = await Client.GetStatusAsync();
 
         // Assert
-        var totalAfter = afterStatus.AvailableContainers + afterStatus.WarmingContainers;
+        int totalAfter = afterStatus.AvailableContainers + afterStatus.WarmingContainers;
         Assert.True(totalAfter >= 1, "Should have containers available or warming");
 
     }

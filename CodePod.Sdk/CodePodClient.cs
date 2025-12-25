@@ -60,10 +60,10 @@ public class CodePodClient : IDisposable
             .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
 
-        var idle = counts.FirstOrDefault(c => c.Status == ContainerStatus.Idle)?.Count ?? 0;
-        var busy = counts.FirstOrDefault(c => c.Status == ContainerStatus.Busy)?.Count ?? 0;
-        var warming = counts.FirstOrDefault(c => c.Status == ContainerStatus.Warming)?.Count ?? 0;
-        var destroying = counts.FirstOrDefault(c => c.Status == ContainerStatus.Destroying)?.Count ?? 0;
+        int idle = counts.FirstOrDefault(c => c.Status == ContainerStatus.Idle)?.Count ?? 0;
+        int busy = counts.FirstOrDefault(c => c.Status == ContainerStatus.Busy)?.Count ?? 0;
+        int warming = counts.FirstOrDefault(c => c.Status == ContainerStatus.Warming)?.Count ?? 0;
+        int destroying = counts.FirstOrDefault(c => c.Status == ContainerStatus.Destroying)?.Count ?? 0;
 
         IEnumerable<SessionInfo> sessions = await _sessionService.GetAllSessionsAsync(cancellationToken);
         List<SessionInfo> sessionList = sessions.ToList();
@@ -284,7 +284,7 @@ public class CodePodClient : IDisposable
     public async Task<byte[]> DownloadFileAsync(int sessionId, string filePath, CancellationToken cancellationToken = default)
     {
         SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
-        var result = await _dockerService.DownloadFileAsync(session.ContainerId!, filePath, cancellationToken);
+        byte[] result = await _dockerService.DownloadFileAsync(session.ContainerId!, filePath, cancellationToken);
         await _sessionService.UpdateSessionActivityAsync(sessionId, cancellationToken);
         return result;
     }
@@ -295,7 +295,7 @@ public class CodePodClient : IDisposable
     public async Task DeleteFileAsync(int sessionId, string filePath, CancellationToken cancellationToken = default)
     {
         SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
-        var deleteCommand = _config.GetDeleteFileCommand(filePath);
+        string deleteCommand = _config.GetDeleteFileCommand(filePath);
         CommandResult result = await _dockerService.ExecuteCommandAsync(session.ContainerId!, deleteCommand, "/", 10, cancellationToken);
         if (result.ExitCode != 0)
         {
@@ -376,7 +376,7 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<List<FileEntry>> GetArtifactsAsync(int sessionId, CancellationToken cancellationToken = default)
     {
-        var artifactsPath = $"{_config.WorkDir}/{_config.ArtifactsDir}";
+        string artifactsPath = $"{_config.WorkDir}/{_config.ArtifactsDir}";
         try
         {
             return await ListDirectoryAsync(sessionId, artifactsPath, cancellationToken);
@@ -393,7 +393,7 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<byte[]> DownloadArtifactAsync(int sessionId, string fileName, CancellationToken cancellationToken = default)
     {
-        var artifactPath = $"{_config.WorkDir}/{_config.ArtifactsDir}/{fileName}";
+        string artifactPath = $"{_config.WorkDir}/{_config.ArtifactsDir}/{fileName}";
         return await DownloadFileAsync(sessionId, artifactPath, cancellationToken);
     }
 

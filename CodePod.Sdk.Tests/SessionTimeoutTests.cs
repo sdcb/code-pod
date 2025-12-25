@@ -73,9 +73,9 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         SessionInfo session = await Client.CreateSessionAsync(new SessionOptions { Name = "下载延时测试", TimeoutSeconds = 10 });
-        
+
         // 先上传一个文件
-        var downloadPath = GetWorkPath("download-timeout.txt");
+        string downloadPath = GetWorkPath("download-timeout.txt");
         await Client.UploadFileAsync(session.Id, downloadPath, "test content"u8.ToArray());
 
         DateTimeOffset initialLastActivity = (await Client.GetSessionAsync(session.Id)).LastActivityAt;
@@ -94,7 +94,7 @@ public class SessionTimeoutTests : TestBase
     {
         // 使用非常短的超时来测试
         CodePodTestSettings settings = TestSettings.Load();
-        var isWindowsContainer = settings.IsWindowsContainer;
+        bool isWindowsContainer = settings.IsWindowsContainer;
 
         CodePodConfig shortTimeoutConfig = new()
         {
@@ -119,8 +119,8 @@ public class SessionTimeoutTests : TestBase
         {
             // Arrange
             SessionInfo session = await shortTimeoutClient.CreateSessionAsync(new SessionOptions { Name = "超时销毁测试", TimeoutSeconds = 2 });
-            
-            var containerId = session.ContainerId;
+
+            string containerId = session.ContainerId;
             
             // 等待超时
             await Task.Delay(4000);

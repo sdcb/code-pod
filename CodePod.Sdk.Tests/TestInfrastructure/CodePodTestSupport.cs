@@ -7,7 +7,7 @@ public static class CodePodTestSupport
 {
     public static CodePodConfig CreateDefaultConfig(CodePodTestSettings settings)
     {
-        var isWindowsContainer = settings.IsWindowsContainer;
+        bool isWindowsContainer = settings.IsWindowsContainer;
 
         return new CodePodConfig
         {
@@ -24,7 +24,7 @@ public static class CodePodTestSupport
 
     public static string GetWorkPath(CodePodConfig config, string relativePath)
     {
-        var rel = relativePath.TrimStart('/', '\\');
+        string rel = relativePath.TrimStart('/', '\\');
 
         if (config.IsWindowsContainer)
         {
@@ -67,7 +67,7 @@ public static class CodePodTestSupport
     {
         if (isWindowsContainer)
         {
-            var delayMs = (int)(delaySeconds * 1000);
+            int delayMs = (int)(delaySeconds * 1000);
             return $"1..{lineCount} | ForEach-Object {{ Write-Output \"stdout: Line $_\"; Write-Error \"stderr: Warning $_\"; Start-Sleep -Milliseconds {delayMs} }}";
         }
 

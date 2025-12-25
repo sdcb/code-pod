@@ -32,8 +32,8 @@ public class OutputTruncationTests : IAsyncLifetime
 
         CodePodTestSettings settings = TestSettings.Load();
         _isWindowsContainer = settings.IsWindowsContainer;
-        var workDir = _isWindowsContainer ? "C:\\app" : "/app";
-        var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
+        string workDir = _isWindowsContainer ? "C:\\app" : "/app";
+        string image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
 
         CodePodConfig config = new()
         {
@@ -110,7 +110,7 @@ public class OutputTruncationTests : IAsyncLifetime
         SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "大输出截断测试" });
 
         // Act - 生成大量输出 (超过 1KB)
-        var command = _isWindowsContainer
+        string command = _isWindowsContainer
             ? "1..500 | ForEach-Object { Write-Output (\"Line {0}: This is a test line to generate large output\" -f $_) }"
             : "for i in $(seq 1 500); do echo \"Line $i: This is a test line to generate large output\"; done";
 
@@ -137,7 +137,7 @@ public class OutputTruncationTests : IAsyncLifetime
         SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "截断信息测试" });
 
         // Act - 生成大量输出
-        var command = _isWindowsContainer
+        string command = _isWindowsContainer
             ? "1..1000 | ForEach-Object { $_ }"
             : "seq 1 1000";
 
@@ -159,7 +159,7 @@ public class OutputTruncationTests : IAsyncLifetime
         SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "Stderr 截断测试" });
 
         // Act - 生成大量 stderr 输出
-        var command = _isWindowsContainer
+        string command = _isWindowsContainer
             ? "1..500 | ForEach-Object { [Console]::Error.WriteLine((\"Error line {0}\" -f $_)) }"
             : "for i in $(seq 1 500); do echo \"Error line $i\" >&2; done";
 
@@ -183,7 +183,7 @@ public class OutputTruncationTests : IAsyncLifetime
         SessionInfo session = await _client.CreateSessionAsync(new SessionOptions { Name = "头尾策略测试" });
 
         // Act - 生成有特定开头和结尾的输出
-        var command = _isWindowsContainer
+        string command = _isWindowsContainer
             ? "Write-Output '=== START ==='; 1..500 | ForEach-Object { Write-Output (\"Middle line {0}\" -f $_) }; Write-Output '=== END ==='"
             : "echo '=== START ===' && for i in $(seq 1 500); do echo \"Middle line $i\"; done && echo '=== END ==='";
 

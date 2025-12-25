@@ -30,9 +30,9 @@ public class PerformanceTests : TestBase
         }
 
         // 计算统计
-        var avgCreateTime = sessionCreateTimes.Average();
-        var minCreateTime = sessionCreateTimes.Min();
-        var maxCreateTime = sessionCreateTimes.Max();
+        double avgCreateTime = sessionCreateTimes.Average();
+        double minCreateTime = sessionCreateTimes.Min();
+        double maxCreateTime = sessionCreateTimes.Max();
 
         // Assert - 会话创建时间应在合理范围内
         Assert.True(avgCreateTime < 30000, $"Average session creation time ({avgCreateTime}ms) should be under 30 seconds");
@@ -63,7 +63,7 @@ public class PerformanceTests : TestBase
         }
 
         // 统计
-        var avgExecTime = commandExecTimes.Average();
+        double avgExecTime = commandExecTimes.Average();
         
         // Assert - 命令执行时间应在合理范围内
         Assert.True(avgExecTime < 5000, $"Average command execution time ({avgExecTime}ms) should be under 5 seconds");
@@ -89,7 +89,7 @@ public class PerformanceTests : TestBase
             Assert.Equal(0, result.ExitCode);
 
             // 3. 上传一个文件
-            var filePath = GetWorkPath("perf-test.txt");
+            string filePath = GetWorkPath("perf-test.txt");
             await Client.UploadFileAsync(
                 session.Id,
                 filePath,
@@ -100,7 +100,7 @@ public class PerformanceTests : TestBase
             Assert.Contains(files, f => f.Name == "perf-test.txt");
 
             // 5. 下载文件
-            var downloaded = await Client.DownloadFileAsync(session.Id, filePath);
+            byte[] downloaded = await Client.DownloadFileAsync(session.Id, filePath);
             Assert.NotEmpty(downloaded);
 
             // 6. 删除文件
@@ -114,7 +114,7 @@ public class PerformanceTests : TestBase
         }
 
         // 统计
-        var avgTotalTime = totalTimes.Average();
+        double avgTotalTime = totalTimes.Average();
         
         // Assert
         Assert.True(avgTotalTime < 60000, $"Average full workflow time ({avgTotalTime}ms) should be under 60 seconds");

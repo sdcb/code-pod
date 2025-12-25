@@ -32,8 +32,8 @@ public class UsageMeteringTests : IAsyncLifetime
 
         CodePodTestSettings settings = TestSettings.Load();
         _isWindowsContainer = settings.IsWindowsContainer;
-        var workDir = _isWindowsContainer ? "C:\\app" : "/app";
-        var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
+        string workDir = _isWindowsContainer ? "C:\\app" : "/app";
+        string image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
 
         CodePodConfig config = new()
         {
@@ -142,7 +142,7 @@ public class UsageMeteringTests : IAsyncLifetime
         SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
 
         // 执行内存密集型工作（创建大文件）
-        var command = _isWindowsContainer
+        string command = _isWindowsContainer
             ? "$p = Join-Path $PWD 'testfile.bin'; $bytes = New-Object byte[] (10MB); [IO.File]::WriteAllBytes($p, $bytes); Remove-Item -Force $p"
             : "dd if=/dev/zero of=/tmp/testfile bs=1M count=10 2>/dev/null && rm /tmp/testfile";
 

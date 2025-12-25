@@ -148,7 +148,7 @@ public class CommandArrayTests
         }
 
         // Assert
-        var allOutput = string.Join("", outputs);
+        string allOutput = string.Join("", outputs);
         Assert.Contains("Line1", allOutput);
         Assert.Contains("Line2", allOutput);
         Assert.Contains("Line3", allOutput);
@@ -162,7 +162,7 @@ public class CommandArrayTests
         SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "复杂 Python 代码测试" });
 
         // 这是 AI 经常生成的多行 Python 代码
-        var pythonCode = @"
+        string pythonCode = @"
 import json
 data = {'name': 'CodePod', 'version': '1.0', 'features': ['resource_limits', 'network_isolation']}
 print(json.dumps(data, indent=2))

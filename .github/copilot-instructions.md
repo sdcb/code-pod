@@ -2,4 +2,4 @@
 
 与用户对话、文档和注释中使用中文；
 代码、异常、API响应等一律使用英文；
-用这样较新的C#语法：StringBuilder sb = new(); 避免使用var；
+用这样较新的C#语法：StringBuilder sb = new();用显式类型代替var并简化new表达式；

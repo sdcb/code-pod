@@ -32,8 +32,8 @@ public class ResourceLimitsTests : IAsyncLifetime
 
         CodePodTestSettings settings = TestSettings.Load();
         _isWindowsContainer = settings.IsWindowsContainer;
-        var workDir = _isWindowsContainer ? "C:\\app" : "/app";
-        var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
+        string workDir = _isWindowsContainer ? "C:\\app" : "/app";
+        string image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
 
         CodePodConfig config = new()
         {
@@ -215,7 +215,7 @@ public class ResourceLimitsTests : IAsyncLifetime
         SessionInfo session = await _client.CreateSessionAsync(options);
 
         // Act - 尝试创建多个子进程（可能会达到限制）
-        var command = _isWindowsContainer
+        string command = _isWindowsContainer
             ? "1..5 | ForEach-Object { Write-Output $_ }"
             : "for i in $(seq 1 5); do echo $i; done";
 

@@ -32,8 +32,8 @@ public class NetworkIsolationTests : IAsyncLifetime
 
         CodePodTestSettings settings = TestSettings.Load();
         _isWindowsContainer = settings.IsWindowsContainer;
-        var workDir = _isWindowsContainer ? "C:\\app" : "/app";
-        var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
+        string workDir = _isWindowsContainer ? "C:\\app" : "/app";
+        string image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
 
         CodePodConfig config = new()
         {
@@ -133,10 +133,10 @@ public class NetworkIsolationTests : IAsyncLifetime
 
         // Assert
         _output.WriteLine($"Network interfaces: {result.Stdout}");
-        
+
         // none 模式下只有 loopback 接口
         // 验证输出为空或显示无外部接口
-        var output = result.Stdout.Trim();
+        string output = result.Stdout.Trim();
         Assert.True(
             string.IsNullOrEmpty(output) || output == "no_external_interfaces",
             "None mode should have no external network interfaces");
@@ -223,9 +223,9 @@ public class NetworkIsolationTests : IAsyncLifetime
 
         // Assert
         _output.WriteLine($"Network interfaces:\n{result.Stdout}");
-        
+
         // 默认配置是 None，应该没有外部网络接口
-        var output = result.Stdout.Trim();
+        string output = result.Stdout.Trim();
         Assert.True(
             string.IsNullOrEmpty(output) || output == "no_external_interfaces",
             "Default None mode should have no external network interfaces");
