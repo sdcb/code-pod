@@ -165,7 +165,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             }
 
             // 创建新容器（不提前绑定 SessionId，后续由 BindContainerToSessionAsync 绑定）
-            ContainerInfo newContainer = await _dockerService.CreateContainerAsync(false, resourceLimits, networkMode, cancellationToken);
+            ContainerInfo newContainer = await _dockerService.CreateContainerAsync(resourceLimits, networkMode, cancellationToken);
             newContainer.Status = ContainerStatus.Busy;
             await SaveContainerAsync(newContainer, cancellationToken);
             _logger?.LogInformation("Created and reserved new container {ContainerId} (unbound) (memory: {Memory}MB, cpu: {Cpu}, network: {Network})",
@@ -347,7 +347,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         try
         {
             // 创建实际容器
-            ContainerInfo containerInfo = await _dockerService.CreateContainerAsync(true, cancellationToken);
+            ContainerInfo containerInfo = await _dockerService.CreateContainerAsync(cancellationToken);
 
             // 等待容器进入running状态
             TimeSpan maxWait = TimeSpan.FromSeconds(30);

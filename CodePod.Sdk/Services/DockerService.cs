@@ -27,12 +27,12 @@ public interface IDockerService : IDisposable
     /// <summary>
     /// 创建并启动容器（使用默认资源限制和网络模式）
     /// </summary>
-    Task<ContainerInfo> CreateContainerAsync(bool isWarm = false, CancellationToken cancellationToken = default);
+    Task<ContainerInfo> CreateContainerAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 创建并启动容器（指定资源限制和网络模式）
     /// </summary>
-    Task<ContainerInfo> CreateContainerAsync(bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default);
+    Task<ContainerInfo> CreateContainerAsync(ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取所有受管理的容器
@@ -140,12 +140,12 @@ public class DockerService : IDockerService
         });
     }
 
-    public Task<ContainerInfo> CreateContainerAsync(bool isWarm = false, CancellationToken cancellationToken = default)
+    public Task<ContainerInfo> CreateContainerAsync(CancellationToken cancellationToken = default)
     {
-        return CreateContainerAsync(isWarm, null, null, cancellationToken);
+        return CreateContainerAsync(null, null, cancellationToken);
     }
 
-    public async Task<ContainerInfo> CreateContainerAsync(bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default)
+    public async Task<ContainerInfo> CreateContainerAsync(ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default)
     {
         return await WrapDockerOperationAsync("CreateContainer", async () =>
         {
@@ -162,7 +162,6 @@ public class DockerService : IDockerService
             {
                 [$"{_config.LabelPrefix}.managed"] = "true",
                 [$"{_config.LabelPrefix}.created"] = DateTimeOffset.UtcNow.ToString("o"),
-                [$"{_config.LabelPrefix}.warm"] = isWarm.ToString().ToLower(),
                 [$"{_config.LabelPrefix}.memory"] = limits.MemoryBytes.ToString(),
                 [$"{_config.LabelPrefix}.cpu"] = limits.CpuCores.ToString("F2"),
                 [$"{_config.LabelPrefix}.pids"] = limits.MaxProcesses.ToString(),
@@ -204,8 +203,8 @@ public class DockerService : IDockerService
 
             await _client.Containers.StartContainerAsync(response.ID, new ContainerStartParameters(), cancellationToken);
 
-            _logger?.LogInformation("Created and started container {ContainerId} (name: {Name}, warm: {IsWarm}, memory: {Memory}MB, cpu: {Cpu}, pids: {Pids}, network: {Network})",
-                response.ID[..12], containerName, isWarm,
+            _logger?.LogInformation("Created and started container {ContainerId} (name: {Name}, memory: {Memory}MB, cpu: {Cpu}, pids: {Pids}, network: {Network})",
+                response.ID[..12], containerName,
                 limits.MemoryBytes / 1024 / 1024, limits.CpuCores, limits.MaxProcesses, network);
 
             // 创建工作目录和 artifacts 目录
