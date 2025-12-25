@@ -72,12 +72,6 @@ public abstract class TestBase : IAsyncLifetime
     }
 
     /// <summary>
-    /// 等待会话就绪（获取到容器）
-    /// </summary>
-    protected async Task<Models.SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
-        => await CodePodTestSupport.WaitForSessionReadyAsync(Client, sessionId, maxWaitSeconds);
-
-    /// <summary>
     /// 检查是否为 Windows 容器模式
     /// </summary>
     protected bool IsWindowsContainer => Config.IsWindowsContainer;

@@ -83,7 +83,6 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("使用量测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // 执行一些命令产生使用量
         await _client.ExecuteCommandAsync(session.Id, "echo 'test'");
@@ -108,7 +107,6 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("活动使用量测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // 获取初始使用量
         SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
@@ -139,7 +137,6 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("内存密集测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // 获取初始使用量
         SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
@@ -168,7 +165,6 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("时间戳测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act
         SessionUsage? usage = await _client.GetSessionUsageAsync(session.Id);
@@ -195,8 +191,6 @@ public class UsageMeteringTests : IAsyncLifetime
         // Arrange
         SessionInfo session1 = await _client.CreateSessionAsync("会话1");
         SessionInfo session2 = await _client.CreateSessionAsync("会话2");
-        await WaitForSessionReadyAsync(session1.Id);
-        await WaitForSessionReadyAsync(session2.Id);
 
         // 在会话1执行更多工作
         for (int i = 0; i < 10; i++)
@@ -221,17 +215,4 @@ public class UsageMeteringTests : IAsyncLifetime
         _output.WriteLine($"Session 2 CPU: {usage2.CpuUsageNanos}");
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
-    {
-        for (int i = 0; i < maxWaitSeconds * 2; i++)
-        {
-            SessionInfo session = await _client.GetSessionAsync(sessionId);
-            if (!string.IsNullOrEmpty(session.ContainerId))
-            {
-                return session;
-            }
-            await Task.Delay(500);
-        }
-        throw new TimeoutException($"Session {sessionId} did not become ready within {maxWaitSeconds} seconds");
-    }
 }

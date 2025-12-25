@@ -6,11 +6,6 @@ namespace CodePod.Sdk.Models;
 public enum SessionStatus
 {
     /// <summary>
-    /// 等待分配容器
-    /// </summary>
-    Queued,
-
-    /// <summary>
     /// 活动中
     /// </summary>
     Active,
@@ -65,17 +60,12 @@ public class SessionInfo
     /// <summary>
     /// 关联的容器ID
     /// </summary>
-    public string? ContainerId { get; set; }
+    public required string ContainerId { get; init; }
 
     /// <summary>
     /// 会话状态
     /// </summary>
     public SessionStatus Status { get; set; }
-
-    /// <summary>
-    /// 队列位置（当状态为Queued时有效）
-    /// </summary>
-    public int QueuePosition { get; set; }
 
     /// <summary>
     /// 创建时间

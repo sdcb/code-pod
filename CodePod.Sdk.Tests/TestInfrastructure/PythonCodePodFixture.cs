@@ -46,9 +46,6 @@ public sealed class PythonCodePodFixture : IAsyncLifetime
         LoggerFactory.Dispose();
     }
 
-    public Task<Models.SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30) =>
-        CodePodTestSupport.WaitForSessionReadyAsync(Client, sessionId, maxWaitSeconds);
-
     public string GetWorkPath(string relativePath) =>
         CodePodTestSupport.GetWorkPath(Config, relativePath);
 }

@@ -48,11 +48,6 @@ public interface ISessionService
     Task UpdateSessionActivityAsync(int sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 获取队列中等待的会话数
-    /// </summary>
-    Task<int> GetQueuedCountAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 处理容器被删除的事件
     /// </summary>
     Task OnContainerDeletedAsync(string containerId, CancellationToken cancellationToken = default);
@@ -77,7 +72,6 @@ public class SessionService : ISessionService
     private readonly IDockerPoolService _poolService;
     private readonly ILogger<SessionService>? _logger;
     private readonly CodePodConfig _config;
-    private readonly SemaphoreSlim _queueLock = new(1, 1);
 
     public SessionService(
         IDbContextFactory<CodePodDbContext> contextFactory,
@@ -117,78 +111,89 @@ public class SessionService : ISessionService
         // 网络模式
         NetworkMode networkMode = options.NetworkMode ?? _config.DefaultNetworkMode;
 
+        // 先预留一个容器：如果这里拿不到，就直接失败，不写入任何 session 记录。
+        ContainerInfo? container = await _poolService.AcquireContainerAsync(resourceLimits, networkMode, cancellationToken);
+        if (container == null)
+        {
+            throw new MaxContainersReachedException(_config.MaxContainers);
+        }
+
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
-        SessionEntity sessionEntity = new()
+        int? createdSessionId = null;
+        try
         {
-            Name = options.Name,
-            CreatedAt = now,
-            LastActivityAt = now,
-            Status = SessionStatus.Queued,
-            TimeoutSeconds = options.TimeoutSeconds,
-            ResourceLimitsJson = System.Text.Json.JsonSerializer.Serialize(resourceLimits),
-            NetworkMode = networkMode
-        };
+            await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+            {
+                SessionEntity sessionEntity = new()
+                {
+                    Name = options.Name,
+                    CreatedAt = now,
+                    LastActivityAt = now,
+                    Status = SessionStatus.Active,
+                    TimeoutSeconds = options.TimeoutSeconds,
+                    ResourceLimitsJson = System.Text.Json.JsonSerializer.Serialize(resourceLimits),
+                    NetworkMode = networkMode,
+                    ContainerId = container.ContainerId,
+                };
 
-        // 先保存以获取自增 ID
+                context.Sessions.Add(sessionEntity);
+                await context.SaveChangesAsync(cancellationToken);
+
+                createdSessionId = sessionEntity.Id;
+
+                if (string.IsNullOrEmpty(sessionEntity.Name))
+                {
+                    sessionEntity.Name = $"Session-{createdSessionId.Value}";
+                    await context.SaveChangesAsync(cancellationToken);
+                }
+            }
+
+            _logger?.LogInformation("Session {SessionId} created with container {ContainerId} (memory: {Memory}MB, cpu: {Cpu}, network: {Network})",
+                createdSessionId.Value, container.ShortId, resourceLimits.MemoryBytes / 1024 / 1024, resourceLimits.CpuCores, networkMode);
+        }
+        catch
+        {
+            // 如果创建过程中任何一步失败，释放容器并尽量删除 session 记录（避免落库垃圾数据）
+            try
+            {
+                await _poolService.ReleaseContainerAsync(container.ContainerId, cancellationToken);
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (createdSessionId.HasValue)
+            {
+                try
+                {
+                    await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+                    SessionEntity? entity = await context.Sessions.FindAsync([createdSessionId.Value], cancellationToken);
+                    if (entity != null)
+                    {
+                        context.Sessions.Remove(entity);
+                        await context.SaveChangesAsync(cancellationToken);
+                    }
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+            throw;
+        }
+
+        // 返回最新状态（必须 ready）
         await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            context.Sessions.Add(sessionEntity);
-            await context.SaveChangesAsync(cancellationToken);
-        }
-
-        var sessionId = sessionEntity.Id;
-
-        // 更新 Name（如果未指定则使用 ID）
-        if (string.IsNullOrEmpty(sessionEntity.Name))
-        {
-            await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
-            if (entity != null)
+            SessionEntity? entity = await context.Sessions.FindAsync([createdSessionId!.Value], cancellationToken);
+            if (entity == null)
             {
-                entity.Name = $"Session-{sessionId}";
-                await context.SaveChangesAsync(cancellationToken);
+                throw new SessionNotFoundException(createdSessionId!.Value);
             }
-        }
 
-        _logger?.LogInformation("Session {SessionId} created (memory: {Memory}MB, cpu: {Cpu}, network: {Network})",
-            sessionId, resourceLimits.MemoryBytes / 1024 / 1024, resourceLimits.CpuCores, networkMode);
-
-        // 尝试分配容器（带资源限制和网络模式）
-        ContainerInfo? container = await _poolService.AcquireContainerAsync(sessionId, resourceLimits, networkMode, cancellationToken);
-
-        if (container != null)
-        {
-            await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
-            if (entity != null)
-            {
-                entity.ContainerId = container.ContainerId;
-                entity.Status = SessionStatus.Active;
-                await context.SaveChangesAsync(cancellationToken);
-            }
-            _logger?.LogInformation("Session {SessionId} acquired container {ContainerId}", sessionId, container.ShortId);
-        }
-        else
-        {
-            // 加入队列
-            var queuedCount = await GetQueuedCountAsync(cancellationToken);
-            await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
-            if (entity != null)
-            {
-                entity.QueuePosition = queuedCount;
-                entity.Status = SessionStatus.Queued;
-                await context.SaveChangesAsync(cancellationToken);
-            }
-            _logger?.LogInformation("Session {SessionId} queued at position {Position}", sessionId, queuedCount);
-        }
-
-        // 返回最新状态
-        await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
-        {
-            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
-            return entity!.ToModel();
+            return entity.ToModel();
         }
     }
 
@@ -196,7 +201,7 @@ public class SessionService : ISessionService
     {
         await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         List<SessionEntity> entities = await context.Sessions
-            .Where(s => s.Status != SessionStatus.Destroyed)
+            .Where(s => s.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
         return entities.Select(e => e.ToModel()).ToList();
     }
@@ -205,7 +210,7 @@ public class SessionService : ISessionService
     {
         await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
-        if (entity == null || entity.Status == SessionStatus.Destroyed)
+        if (entity == null || entity.Status != SessionStatus.Active)
         {
             return null;
         }
@@ -236,12 +241,6 @@ public class SessionService : ISessionService
         {
             await _poolService.ReleaseContainerAsync(containerId, cancellationToken);
         }
-
-        // 尝试处理队列
-        if (await GetQueuedCountAsync(cancellationToken) > 0)
-        {
-            await TryPromoteQueueWithRetryAsync(cancellationToken);
-        }
     }
 
     public async Task UpdateSessionActivityAsync(int sessionId, CancellationToken cancellationToken = default)
@@ -255,12 +254,6 @@ public class SessionService : ISessionService
         }
     }
 
-    public async Task<int> GetQueuedCountAsync(CancellationToken cancellationToken = default)
-    {
-        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        return await context.Sessions.CountAsync(s => s.Status == SessionStatus.Queued, cancellationToken);
-    }
-
     public async Task OnContainerDeletedAsync(string containerId, CancellationToken cancellationToken = default)
     {
         await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
@@ -268,7 +261,6 @@ public class SessionService : ISessionService
         if (entity != null)
         {
             entity.Status = SessionStatus.Destroyed;
-            entity.ContainerId = null;
             await context.SaveChangesAsync(cancellationToken);
             _logger?.LogInformation("Container {ContainerId} deleted, session {SessionId} marked as destroyed", containerId[..12], entity.Id);
         }
@@ -301,96 +293,5 @@ public class SessionService : ISessionService
         }
     }
 
-    private async Task TryPromoteQueueWithRetryAsync(CancellationToken cancellationToken)
-    {
-        const int maxRetries = 10;
-        const int retryDelayMs = 500;
-
-        for (int i = 0; i < maxRetries; i++)
-        {
-            if (await TryPromoteQueueOnceAsync(cancellationToken))
-            {
-                return;
-            }
-
-            if (await GetQueuedCountAsync(cancellationToken) == 0)
-            {
-                return;
-            }
-
-            await Task.Delay(retryDelayMs, cancellationToken);
-        }
-
-        _logger?.LogWarning("Failed to promote queued sessions after {MaxRetries} retries", maxRetries);
-    }
-
-    private async Task<bool> TryPromoteQueueOnceAsync(CancellationToken cancellationToken)
-    {
-        await _queueLock.WaitAsync(cancellationToken);
-        try
-        {
-            bool promoted = false;
-
-            // 获取队列中的会话
-            List<SessionEntity> queuedEntities;
-            await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
-            {
-                queuedEntities = await context.Sessions
-                    .Where(s => s.Status == SessionStatus.Queued)
-                    .OrderBy(s => s.QueuePosition)
-                    .ToListAsync(cancellationToken);
-            }
-
-            foreach (SessionEntity queuedEntity in queuedEntities)
-            {
-                // 重新获取最新状态
-                await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-                SessionEntity? entity = await context.Sessions.FindAsync([queuedEntity.Id], cancellationToken);
-                if (entity == null || entity.Status != SessionStatus.Queued)
-                {
-                    continue;
-                }
-
-                ContainerInfo? container = await _poolService.AcquireContainerAsync(entity.Id, cancellationToken);
-                if (container != null)
-                {
-                    entity.ContainerId = container.ContainerId;
-                    entity.Status = SessionStatus.Active;
-                    entity.QueuePosition = 0;
-                    await context.SaveChangesAsync(cancellationToken);
-                    _logger?.LogInformation("Queued session {SessionId} acquired container {ContainerId}", entity.Id, container.ShortId);
-                    promoted = true;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            // 更新队列位置
-            await UpdateQueuePositionsAsync(cancellationToken);
-
-            return promoted;
-        }
-        finally
-        {
-            _queueLock.Release();
-        }
-    }
-
-    private async Task UpdateQueuePositionsAsync(CancellationToken cancellationToken)
-    {
-        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        List<SessionEntity> queuedEntities = await context.Sessions
-            .Where(s => s.Status == SessionStatus.Queued)
-            .OrderBy(s => s.QueuePosition)
-            .ToListAsync(cancellationToken);
-
-        var position = 1;
-        foreach (SessionEntity? entity in queuedEntities)
-        {
-            entity.QueuePosition = position++;
-        }
-        await context.SaveChangesAsync(cancellationToken);
-    }
+    // Queued 语义已废弃：不再有排队、提升、位置更新等逻辑。
 }

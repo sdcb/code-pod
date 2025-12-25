@@ -21,7 +21,6 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         SessionInfo session = await Client.CreateSessionAsync("命令延时测试", 10);
-        await WaitForSessionReadyAsync(session.Id);
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         // Wait a bit
@@ -40,7 +39,6 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         SessionInfo session = await Client.CreateSessionAsync("上传延时测试", 10);
-        await WaitForSessionReadyAsync(session.Id);
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         await Task.Delay(1000);
@@ -58,7 +56,6 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         SessionInfo session = await Client.CreateSessionAsync("列目录延时测试", 10);
-        await WaitForSessionReadyAsync(session.Id);
         DateTimeOffset initialLastActivity = session.LastActivityAt;
 
         await Task.Delay(1000);
@@ -76,7 +73,6 @@ public class SessionTimeoutTests : TestBase
     {
         // Arrange
         SessionInfo session = await Client.CreateSessionAsync("下载延时测试", 10);
-        await WaitForSessionReadyAsync(session.Id);
         
         // 先上传一个文件
         var downloadPath = GetWorkPath("download-timeout.txt");
@@ -123,7 +119,6 @@ public class SessionTimeoutTests : TestBase
         {
             // Arrange
             SessionInfo session = await shortTimeoutClient.CreateSessionAsync("超时销毁测试", 2);
-            await Task.Delay(1000); // 等待容器分配
             
             var containerId = session.ContainerId;
             

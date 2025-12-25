@@ -27,12 +27,12 @@ public interface IDockerService : IDisposable
     /// <summary>
     /// 创建并启动容器（使用默认资源限制和网络模式）
     /// </summary>
-    Task<ContainerInfo> CreateContainerAsync(int? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default);
+    Task<ContainerInfo> CreateContainerAsync(bool isWarm = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 创建并启动容器（指定资源限制和网络模式）
     /// </summary>
-    Task<ContainerInfo> CreateContainerAsync(int? sessionId, bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default);
+    Task<ContainerInfo> CreateContainerAsync(bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取所有受管理的容器
@@ -90,11 +90,6 @@ public interface IDockerService : IDisposable
     Task<byte[]> DownloadFileAsync(string containerId, string filePath, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 更新容器的会话标签
-    /// </summary>
-    Task AssignSessionToContainerAsync(string containerId, int sessionId, CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 获取容器使用量统计
     /// </summary>
     Task<SessionUsage?> GetContainerStatsAsync(string containerId, CancellationToken cancellationToken = default);
@@ -145,12 +140,12 @@ public class DockerService : IDockerService
         });
     }
 
-    public Task<ContainerInfo> CreateContainerAsync(int? sessionId = null, bool isWarm = false, CancellationToken cancellationToken = default)
+    public Task<ContainerInfo> CreateContainerAsync(bool isWarm = false, CancellationToken cancellationToken = default)
     {
-        return CreateContainerAsync(sessionId, isWarm, null, null, cancellationToken);
+        return CreateContainerAsync(isWarm, null, null, cancellationToken);
     }
 
-    public async Task<ContainerInfo> CreateContainerAsync(int? sessionId, bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default)
+    public async Task<ContainerInfo> CreateContainerAsync(bool isWarm, ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken = default)
     {
         return await WrapDockerOperationAsync("CreateContainer", async () =>
         {
@@ -173,11 +168,6 @@ public class DockerService : IDockerService
                 [$"{_config.LabelPrefix}.pids"] = limits.MaxProcesses.ToString(),
                 [$"{_config.LabelPrefix}.network"] = network.ToString().ToLower()
             };
-
-            if (sessionId.HasValue)
-            {
-                labels[$"{_config.LabelPrefix}.session"] = sessionId.Value.ToString();
-            }
 
             // 构建 HostConfig，Windows 容器不支持某些选项
             HostConfig hostConfig = new()
@@ -231,7 +221,6 @@ public class DockerService : IDockerService
                 Status = SdkContainerStatus.Warming,
                 CreatedAt = DateTimeOffset.UtcNow,
                 StartedAt = DateTimeOffset.UtcNow,
-                SessionId = sessionId,
                 Labels = labels
             };
         });
@@ -256,18 +245,14 @@ public class DockerService : IDockerService
             List<ContainerInfo> result = new();
             foreach (ContainerListResponse? container in containers)
             {
-                container.Labels.TryGetValue($"{_config.LabelPrefix}.session", out var sessionIdStr);
-                int? containerSessionId = int.TryParse(sessionIdStr, out var sid) ? sid : null;
-
                 result.Add(new ContainerInfo
                 {
                     ContainerId = container.ID,
                     Name = container.Names.FirstOrDefault()?.TrimStart('/') ?? container.ID[..12],
                     Image = container.Image,
                     DockerStatus = container.State,
-                    Status = containerSessionId == null ? SdkContainerStatus.Idle : SdkContainerStatus.Busy,
+                    Status = SdkContainerStatus.Idle,
                     CreatedAt = container.Created,
-                    SessionId = containerSessionId,
                     Labels = new Dictionary<string, string>(container.Labels)
                 });
             }
@@ -289,19 +274,15 @@ public class DockerService : IDockerService
                     return null;
                 }
 
-                inspect.Config.Labels.TryGetValue($"{_config.LabelPrefix}.session", out var sessionIdStr);
-                int? containerSessionId = int.TryParse(sessionIdStr, out var sid) ? sid : null;
-
                 return new ContainerInfo
                 {
                     ContainerId = inspect.ID,
                     Name = inspect.Name.TrimStart('/'),
                     Image = inspect.Config.Image,
                     DockerStatus = inspect.State.Status,
-                    Status = containerSessionId == null ? SdkContainerStatus.Idle : SdkContainerStatus.Busy,
+                    Status = SdkContainerStatus.Idle,
                     CreatedAt = inspect.Created,
                     StartedAt = DateTimeOffset.TryParse(inspect.State.StartedAt, out DateTimeOffset started) ? started : null,
-                    SessionId = containerSessionId,
                     Labels = new Dictionary<string, string>(inspect.Config.Labels)
                 };
             }
@@ -584,25 +565,6 @@ public class DockerService : IDockerService
             }
 
             throw new FileNotFoundException($"File {filePath} not found in container");
-        }, containerId);
-    }
-
-    public async Task AssignSessionToContainerAsync(string containerId, int sessionId, CancellationToken cancellationToken = default)
-    {
-        await WrapDockerOperationAsync("AssignSession", async () =>
-        {
-            _logger?.LogInformation("Container {ContainerId} assigned to session {SessionId}", containerId[..12], sessionId);
-            
-            // Windows Hyper-V 隔离容器不支持文件系统操作，跳过标记文件创建
-            // 会话关联信息已通过容器标签存储
-            if (_config.IsWindowsContainer)
-            {
-                _logger?.LogDebug("Skipping session marker file for Windows container (Hyper-V isolation does not support filesystem operations)");
-                return;
-            }
-            
-            var marker = $"Session: {sessionId}\nAssigned: {DateTimeOffset.UtcNow:o}";
-            await UploadFileAsync(containerId, $"{_config.WorkDir}/.session", Encoding.UTF8.GetBytes(marker), cancellationToken);
         }, containerId);
     }
 

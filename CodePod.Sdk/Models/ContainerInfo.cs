@@ -72,11 +72,6 @@ public class ContainerInfo
     public DateTimeOffset? StartedAt { get; init; }
 
     /// <summary>
-    /// 关联的会话ID
-    /// </summary>
-    public int? SessionId { get; set; }
-
-    /// <summary>
     /// 容器标签
     /// </summary>
     public Dictionary<string, string> Labels { get; init; } = new();

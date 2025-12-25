@@ -57,7 +57,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("详情测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
         SessionInfo retrieved = await Client.GetSessionAsync(session.Id);
@@ -75,7 +74,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("命令测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -95,7 +93,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("错误命令测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -115,7 +112,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("多行输出测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act - 使用跨平台命令
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -136,7 +132,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("流式输出测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act - 使用跨平台命令
         List<string> stdoutEvents = new();
@@ -176,7 +171,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("上传文件测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
         var content = "Hello, this is a test file!\n测试中文内容";
         var bytes = Encoding.UTF8.GetBytes(content);
 
@@ -196,7 +190,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("列目录测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
         var content = "test content";
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("listtest.txt"), Encoding.UTF8.GetBytes(content));
 
@@ -216,7 +209,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("下载文件测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
         var originalContent = "Hello, this is a test file!\n测试中文内容";
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("download.txt"), Encoding.UTF8.GetBytes(originalContent));
 
@@ -237,7 +229,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("删除文件测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
         await Client.UploadFileAsync(session.Id, _fixture.GetWorkPath("todelete.txt"), Encoding.UTF8.GetBytes("delete me"));
 
         // Act
@@ -284,7 +275,6 @@ public class ApiTests
 
         // Arrange
         SessionInfo session = await sessionTracker.CreateSessionAsync("销毁测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
         await Client.DestroySessionAsync(session.Id);
@@ -328,7 +318,6 @@ public class ApiTests
 
         // Act
         SessionInfo session = await sessions.CreateSessionAsync("补充测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
         
         // 等待预热容器创建
         await Task.Delay(2000);

@@ -92,7 +92,6 @@ public class ResourceLimitsTests : IAsyncLifetime
     {
         // Act
         SessionInfo session = await _client.CreateSessionAsync("默认限制测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // Assert
         Assert.NotNull(session);
@@ -117,7 +116,6 @@ public class ResourceLimitsTests : IAsyncLifetime
 
         // Act
         SessionInfo session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.Id);
 
         // Assert
         Assert.NotNull(session);
@@ -137,7 +135,6 @@ public class ResourceLimitsTests : IAsyncLifetime
 
         // Act
         SessionInfo session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.Id);
 
         // Assert
         Assert.NotNull(session);
@@ -183,7 +180,6 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         SessionInfo session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试分配超过限制的内存（这可能会失败或被 OOM killer 杀死）
         // 使用 dotnet 分配内存
@@ -217,7 +213,6 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         SessionInfo session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试创建多个子进程（可能会达到限制）
         var command = _isWindowsContainer
@@ -250,17 +245,4 @@ public class ResourceLimitsTests : IAsyncLifetime
         _output.WriteLine($"Large: {ResourceLimits.Large.MemoryBytes / 1024 / 1024}MB, {ResourceLimits.Large.CpuCores} CPU");
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
-    {
-        for (int i = 0; i < maxWaitSeconds * 2; i++)
-        {
-            SessionInfo session = await _client.GetSessionAsync(sessionId);
-            if (!string.IsNullOrEmpty(session.ContainerId))
-            {
-                return session;
-            }
-            await Task.Delay(500);
-        }
-        throw new TimeoutException($"Session {sessionId} did not become ready within {maxWaitSeconds} seconds");
-    }
 }

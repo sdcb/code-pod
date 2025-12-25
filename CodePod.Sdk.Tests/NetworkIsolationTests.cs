@@ -93,7 +93,6 @@ public class NetworkIsolationTests : IAsyncLifetime
         };
 
         SessionInfo session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试访问外部网络
         // 使用 curl 或 wget 测试（可能需要超时）
@@ -125,7 +124,6 @@ public class NetworkIsolationTests : IAsyncLifetime
         };
 
         SessionInfo session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
         CommandResult result = await _client.ExecuteCommandAsync(
@@ -158,7 +156,6 @@ public class NetworkIsolationTests : IAsyncLifetime
         };
 
         SessionInfo session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试 DNS 解析（不需要实际下载，更快更可靠）
         CommandResult result = await _client.ExecuteCommandAsync(
@@ -190,7 +187,6 @@ public class NetworkIsolationTests : IAsyncLifetime
         };
 
         SessionInfo session = await _client.CreateSessionAsync(options);
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口（使用 cat /proc/net/dev 作为备选）
         CommandResult result = await _client.ExecuteCommandAsync(
@@ -218,7 +214,6 @@ public class NetworkIsolationTests : IAsyncLifetime
 
         // Arrange - 客户端配置默认使用 None
         SessionInfo session = await _client.CreateSessionAsync("默认网络模式测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
         CommandResult result = await _client.ExecuteCommandAsync(
@@ -248,7 +243,6 @@ public class NetworkIsolationTests : IAsyncLifetime
             Name = "None 模式",
             NetworkMode = NetworkMode.None
         });
-        await WaitForSessionReadyAsync(sessionNone.Id);
 
         // 测试 2: 创建 Bridge 模式会话
         SessionInfo sessionBridge = await _client.CreateSessionAsync(new SessionOptions
@@ -256,7 +250,6 @@ public class NetworkIsolationTests : IAsyncLifetime
             Name = "Bridge 模式",
             NetworkMode = NetworkMode.Bridge
         });
-        await WaitForSessionReadyAsync(sessionBridge.Id);
 
         // 验证两个会话有不同的网络配置
         // 使用 /proc/net/dev 来检查网络接口
@@ -279,17 +272,4 @@ public class NetworkIsolationTests : IAsyncLifetime
         Assert.NotNull(resultBridge);
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
-    {
-        for (int i = 0; i < maxWaitSeconds * 2; i++)
-        {
-            SessionInfo session = await _client.GetSessionAsync(sessionId);
-            if (!string.IsNullOrEmpty(session.ContainerId))
-            {
-                return session;
-            }
-            await Task.Delay(500);
-        }
-        throw new TimeoutException($"Session {sessionId} did not become ready within {maxWaitSeconds} seconds");
-    }
 }

@@ -22,21 +22,6 @@ public static class CodePodTestSupport
         };
     }
 
-    public static async Task<Models.SessionInfo> WaitForSessionReadyAsync(CodePodClient client, int sessionId, int maxWaitSeconds = 30)
-    {
-        for (int i = 0; i < maxWaitSeconds * 2; i++)
-        {
-            SessionInfo session = await client.GetSessionAsync(sessionId);
-            if (!string.IsNullOrEmpty(session.ContainerId))
-            {
-                return session;
-            }
-            await Task.Delay(500);
-        }
-
-        throw new TimeoutException($"Session {sessionId} did not become ready within {maxWaitSeconds} seconds");
-    }
-
     public static string GetWorkPath(CodePodConfig config, string relativePath)
     {
         var rel = relativePath.TrimStart('/', '\\');

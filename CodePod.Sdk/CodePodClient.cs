@@ -75,8 +75,7 @@ public class CodePodClient : IDisposable
             WarmingContainers = warming,
             DestroyingContainers = destroying,
             MaxContainers = _config.MaxContainers,
-            ActiveSessions = sessionList.Count(s => s.Status == SessionStatus.Active),
-            QueuedSessions = sessionList.Count(s => s.Status == SessionStatus.Queued)
+            ActiveSessions = sessionList.Count(s => s.Status == SessionStatus.Active)
         };
     }
 

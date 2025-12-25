@@ -32,7 +32,6 @@ public class CodePodDbContext : DbContext
             entity.Property(e => e.LabelsJson).HasColumnName("Labels");
 
             entity.HasIndex(e => e.Status);
-            entity.HasIndex(e => e.SessionId);
         });
 
         // Session 实体配置
@@ -41,14 +40,13 @@ public class CodePodDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
             entity.Property(e => e.Name).HasMaxLength(256);
-            entity.Property(e => e.ContainerId).HasMaxLength(64);
+            entity.Property(e => e.ContainerId).HasMaxLength(64).IsRequired();
             entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
             entity.Property(e => e.NetworkMode).HasConversion<string>().HasMaxLength(32);
             entity.Property(e => e.ResourceLimitsJson).HasColumnName("ResourceLimits");
 
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.ContainerId);
-            entity.HasIndex(e => e.QueuePosition);
         });
     }
 }
@@ -65,7 +63,6 @@ public class ContainerEntity
     public ContainerStatus Status { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
-    public int? SessionId { get; set; }
 
     /// <summary>
     /// Labels 的 JSON 序列化存储
@@ -90,7 +87,6 @@ public class ContainerEntity
             Status = Status,
             CreatedAt = CreatedAt,
             StartedAt = StartedAt,
-            SessionId = SessionId,
             Labels = labels
         };
     }
@@ -109,7 +105,6 @@ public class ContainerEntity
             Status = model.Status,
             CreatedAt = model.CreatedAt,
             StartedAt = model.StartedAt,
-            SessionId = model.SessionId,
             LabelsJson = model.Labels.Count > 0 ? JsonSerializer.Serialize(model.Labels) : null
         };
     }
@@ -120,7 +115,6 @@ public class ContainerEntity
     public void UpdateFromModel(ContainerInfo model)
     {
         Status = model.Status;
-        SessionId = model.SessionId;
         LabelsJson = model.Labels.Count > 0 ? JsonSerializer.Serialize(model.Labels) : null;
     }
 }
@@ -132,9 +126,8 @@ public class SessionEntity
 {
     public int Id { get; set; }
     public string? Name { get; set; }
-    public string? ContainerId { get; set; }
+    public required string ContainerId { get; set; }
     public SessionStatus Status { get; set; }
-    public int QueuePosition { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset LastActivityAt { get; set; }
     public int CommandCount { get; set; }
@@ -162,7 +155,6 @@ public class SessionEntity
             Name = Name,
             ContainerId = ContainerId,
             Status = Status,
-            QueuePosition = QueuePosition,
             CreatedAt = CreatedAt,
             LastActivityAt = LastActivityAt,
             CommandCount = CommandCount,
@@ -184,7 +176,6 @@ public class SessionEntity
             Name = model.Name,
             ContainerId = model.ContainerId,
             Status = model.Status,
-            QueuePosition = model.QueuePosition,
             CreatedAt = model.CreatedAt,
             LastActivityAt = model.LastActivityAt,
             CommandCount = model.CommandCount,
@@ -203,7 +194,6 @@ public class SessionEntity
         Name = model.Name;
         ContainerId = model.ContainerId;
         Status = model.Status;
-        QueuePosition = model.QueuePosition;
         LastActivityAt = model.LastActivityAt;
         CommandCount = model.CommandCount;
         IsExecutingCommand = model.IsExecutingCommand;

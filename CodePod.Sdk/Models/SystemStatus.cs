@@ -34,9 +34,4 @@ public class SystemStatus
     /// 活动会话数
     /// </summary>
     public int ActiveSessions { get; init; }
-
-    /// <summary>
-    /// 等待中会话数
-    /// </summary>
-    public int QueuedSessions { get; init; }
 }

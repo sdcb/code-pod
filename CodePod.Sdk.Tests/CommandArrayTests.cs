@@ -31,7 +31,6 @@ public class CommandArrayTests
         // Arrange
         await using TestSessionTracker sessions = new(Client);
         SessionInfo session = await sessions.CreateSessionAsync("命令数组基础测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act - 使用命令数组
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -50,7 +49,6 @@ public class CommandArrayTests
         // Arrange
         await using TestSessionTracker sessions = new(Client);
         SessionInfo session = await sessions.CreateSessionAsync("避免转义测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act - 包含特殊字符的参数，使用数组形式不需要转义
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -72,7 +70,6 @@ public class CommandArrayTests
         // Arrange
         await using TestSessionTracker sessions = new(Client);
         SessionInfo session = await sessions.CreateSessionAsync("Python 一行代码测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act - AI 常用的 Python 一行代码执行
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -94,7 +91,6 @@ public class CommandArrayTests
         // Arrange
         await using TestSessionTracker sessions = new(Client);
         SessionInfo session = await sessions.CreateSessionAsync("Python 命令数组测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
         CommandResult result = await Client.ExecuteCommandAsync(
@@ -113,7 +109,6 @@ public class CommandArrayTests
         // Arrange
         await using TestSessionTracker sessions = new(Client);
         SessionInfo session = await sessions.CreateSessionAsync("工作目录测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         string targetDir = GetWorkPath("testdir");
         await Client.ExecuteCommandAsync(
@@ -138,7 +133,6 @@ public class CommandArrayTests
         // Arrange
         await using TestSessionTracker sessions = new(Client);
         SessionInfo session = await sessions.CreateSessionAsync("流式命令数组测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // Act
         List<string> outputs = new();
@@ -166,7 +160,6 @@ public class CommandArrayTests
         // Arrange
         await using TestSessionTracker sessions = new(Client);
         SessionInfo session = await sessions.CreateSessionAsync("复杂 Python 代码测试");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // 这是 AI 经常生成的多行 Python 代码
         var pythonCode = @"
@@ -196,7 +189,6 @@ print(json.dumps(data, indent=2))
         // Arrange
         await using TestSessionTracker sessions = new(Client);
         SessionInfo session = await sessions.CreateSessionAsync("字符串 vs 数组对比");
-        await _fixture.WaitForSessionReadyAsync(session.Id);
 
         // 测试相同命令的两种方式
 

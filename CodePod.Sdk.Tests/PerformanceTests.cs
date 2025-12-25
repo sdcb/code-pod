@@ -25,9 +25,6 @@ public class PerformanceTests : TestBase
             // 创建会话
             SessionInfo session = await sessions.CreateSessionAsync($"性能测试-{round}");
 
-            // 等待会话就绪
-            await WaitForSessionReadyAsync(session.Id, 60);
-
             sw.Stop();
             sessionCreateTimes.Add(sw.Elapsed.TotalMilliseconds);
         }
@@ -47,7 +44,6 @@ public class PerformanceTests : TestBase
         await using TestSessionTracker sessions = new(Client);
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync("命令性能测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         List<double> commandExecTimes = new();
 
@@ -85,7 +81,6 @@ public class PerformanceTests : TestBase
 
             // 1. 创建会话
             SessionInfo session = await sessions.CreateSessionAsync($"完整流程-{round}");
-            await WaitForSessionReadyAsync(session.Id);
 
             // 2. 执行一个简单命令
             CommandResult result = await Client.ExecuteCommandAsync(

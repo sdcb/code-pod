@@ -150,7 +150,7 @@ public class SessionUsage
     /// <summary>
     /// 容器ID
     /// </summary>
-    public string? ContainerId { get; set; }
+    public required string ContainerId { get; init; }
 
     /// <summary>
     /// CPU 使用时间（纳秒）

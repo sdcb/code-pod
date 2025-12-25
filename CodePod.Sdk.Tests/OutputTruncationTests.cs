@@ -89,7 +89,6 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("小输出测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成少量输出
         CommandResult result = await _client.ExecuteCommandAsync(
@@ -109,7 +108,6 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("大输出截断测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量输出 (超过 1KB)
         var command = _isWindowsContainer
@@ -137,7 +135,6 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("截断信息测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量输出
         var command = _isWindowsContainer
@@ -160,7 +157,6 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("Stderr 截断测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成大量 stderr 输出
         var command = _isWindowsContainer
@@ -185,7 +181,6 @@ public class OutputTruncationTests : IAsyncLifetime
     {
         // Arrange
         SessionInfo session = await _client.CreateSessionAsync("头尾策略测试");
-        await WaitForSessionReadyAsync(session.Id);
 
         // Act - 生成有特定开头和结尾的输出
         var command = _isWindowsContainer
@@ -224,17 +219,4 @@ public class OutputTruncationTests : IAsyncLifetime
         _output.WriteLine($"Default TruncationMessage: {defaultOptions.TruncationMessage}");
     }
 
-    private async Task<SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30)
-    {
-        for (int i = 0; i < maxWaitSeconds * 2; i++)
-        {
-            SessionInfo session = await _client.GetSessionAsync(sessionId);
-            if (!string.IsNullOrEmpty(session.ContainerId))
-            {
-                return session;
-            }
-            await Task.Delay(500);
-        }
-        throw new TimeoutException($"Session {sessionId} did not become ready within {maxWaitSeconds} seconds");
-    }
 }

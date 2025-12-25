@@ -59,6 +59,11 @@ public class DockerStateSyncService : IDockerStateSyncService
             dbSessions = await context.Sessions.Where(s => s.Status != SessionStatus.Destroyed).ToListAsync(cancellationToken);
         }
 
+        HashSet<string> busyContainerIds = dbSessions
+            .Where(s => s.Status == SessionStatus.Active && !string.IsNullOrEmpty(s.ContainerId))
+            .Select(s => s.ContainerId!)
+            .ToHashSet();
+
         HashSet<string> dbContainerIds = dbContainers.Select(c => c.ContainerId).ToHashSet();
         _logger?.LogInformation("Found {Count} containers in database", dbContainers.Count);
 
@@ -76,7 +81,6 @@ public class DockerStateSyncService : IDockerStateSyncService
             if (session != null && session.Status != SessionStatus.Destroyed)
             {
                 session.Status = SessionStatus.Destroyed;
-                session.ContainerId = null;
                 _logger?.LogInformation("Session {SessionId} marked as destroyed due to missing container", session.Id);
             }
 
@@ -98,10 +102,10 @@ public class DockerStateSyncService : IDockerStateSyncService
 
             if (isRunning)
             {
-                // 运行中的容器：添加到数据库，根据是否有会话ID判断状态
-                ContainerStatus status = dockerContainer.SessionId == null
-                    ? ContainerStatus.Idle
-                    : ContainerStatus.Busy;
+                // 运行中的容器：添加到数据库，根据是否被活动会话引用判断状态
+                ContainerStatus status = busyContainerIds.Contains(containerId)
+                    ? ContainerStatus.Busy
+                    : ContainerStatus.Idle;
 
                 await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
                 context.Containers.Add(ContainerEntity.FromModel(new ContainerInfo
@@ -113,7 +117,6 @@ public class DockerStateSyncService : IDockerStateSyncService
                     Status = status,
                     CreatedAt = dockerContainer.CreatedAt,
                     StartedAt = dockerContainer.StartedAt,
-                    SessionId = dockerContainer.SessionId,
                     Labels = dockerContainer.Labels
                 }));
                 await context.SaveChangesAsync(cancellationToken);
@@ -121,17 +124,6 @@ public class DockerStateSyncService : IDockerStateSyncService
                 _logger?.LogInformation("Added container {ContainerId} to database with status {Status}",
                     dockerContainer.ShortId, status);
 
-                // 如果有关联的会话但会话不存在，记录警告
-                if (dockerContainer.SessionId != null)
-                {
-                    await using CodePodDbContext sessionContext = await _contextFactory.CreateDbContextAsync(cancellationToken);
-                    SessionEntity? existingSession = await sessionContext.Sessions.FindAsync([dockerContainer.SessionId], cancellationToken);
-                    if (existingSession == null)
-                    {
-                        _logger?.LogWarning("Container {ContainerId} has session {SessionId} but session not found in database",
-                            dockerContainer.ShortId, dockerContainer.SessionId);
-                    }
-                }
             }
             else
             {
@@ -166,15 +158,11 @@ public class DockerStateSyncService : IDockerStateSyncService
                 await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
 
                 // 如果有关联的会话，标记为已销毁
-                if (dbContainer.SessionId != null)
+                SessionEntity? session = await context.Sessions.FirstOrDefaultAsync(s => s.ContainerId == containerId && s.Status != SessionStatus.Destroyed, cancellationToken);
+                if (session != null)
                 {
-                    SessionEntity? session = await context.Sessions.FindAsync([dbContainer.SessionId], cancellationToken);
-                    if (session != null && session.Status != SessionStatus.Destroyed)
-                    {
-                        session.Status = SessionStatus.Destroyed;
-                        session.ContainerId = null;
-                        _logger?.LogInformation("Session {SessionId} marked as destroyed due to stopped container", session.Id);
-                    }
+                    session.Status = SessionStatus.Destroyed;
+                    _logger?.LogInformation("Session {SessionId} marked as destroyed due to stopped container", session.Id);
                 }
 
                 ContainerEntity? container = await context.Containers.FindAsync([containerId], cancellationToken);
@@ -196,21 +184,11 @@ public class DockerStateSyncService : IDockerStateSyncService
             else
             {
                 // 容器运行中，同步状态
-                ContainerStatus expectedStatus = dockerContainer.SessionId == null
-                    ? ContainerStatus.Idle
-                    : ContainerStatus.Busy;
+                ContainerStatus expectedStatus = busyContainerIds.Contains(containerId)
+                    ? ContainerStatus.Busy
+                    : ContainerStatus.Idle;
 
                 var needsUpdate = false;
-
-                // 检查会话一致性
-                if (dbContainer.SessionId != dockerContainer.SessionId)
-                {
-                    _logger?.LogWarning("Container {ContainerId} session mismatch: DB={DbSession}, Docker={DockerSession}",
-                        dockerContainer.ShortId,
-                        dbContainer.SessionId?.ToString() ?? "(null)",
-                        dockerContainer.SessionId?.ToString() ?? "(null)");
-                    needsUpdate = true;
-                }
 
                 if (dbContainer.Status != expectedStatus || dbContainer.Status == ContainerStatus.Warming || dbContainer.Status == ContainerStatus.Destroying)
                 {
@@ -226,7 +204,6 @@ public class DockerStateSyncService : IDockerStateSyncService
                     if (container != null)
                     {
                         container.Status = expectedStatus;
-                        container.SessionId = dockerContainer.SessionId;
                         await context.SaveChangesAsync(cancellationToken);
                     }
                 }
@@ -268,7 +245,6 @@ public class DockerStateSyncService : IDockerStateSyncService
                     session.Id, containerIdShort);
 
                 session.Status = SessionStatus.Destroyed;
-                session.ContainerId = null;
             }
             await context.SaveChangesAsync(cancellationToken);
         }
