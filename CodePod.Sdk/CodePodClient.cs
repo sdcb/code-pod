@@ -436,12 +436,7 @@ public class CodePodClient : IDisposable
 
     public void Dispose()
     {
-        // 先取消后台任务（DockerPoolService）
-        if (_poolService is IDisposable poolDisposable)
-        {
-            poolDisposable.Dispose();
-        }
-
+        _poolService.Dispose();
         // 然后释放 Docker 客户端
         _dockerService.Dispose();
         GC.SuppressFinalize(this);

@@ -34,6 +34,7 @@ public sealed class CodePodFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        await Client.DeleteAllContainersAsync();
         Client.Dispose();
     }
 

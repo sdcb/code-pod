@@ -1,6 +1,5 @@
 using CodePod.Sdk.Configuration;
 using CodePod.Sdk.Models;
-using CodePod.Sdk.Tests;
 
 namespace CodePod.Sdk.Tests.TestInfrastructure;
 
@@ -15,7 +14,7 @@ public static class CodePodTestSupport
             IsWindowsContainer = isWindowsContainer,
             DockerEndpoint = settings.DockerEndpoint,
             Image = isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage,
-            PrewarmCount = 2,
+            PrewarmCount = 1,
             MaxContainers = 10,
             SessionTimeoutSeconds = 1800,
             WorkDir = isWindowsContainer ? "C:\\app" : "/app",
