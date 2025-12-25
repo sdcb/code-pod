@@ -2,6 +2,7 @@ using CodePod.Sdk.Configuration;
 using Microsoft.Extensions.Logging;
 using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
+using CodePod.Sdk.Models;
 
 namespace CodePod.Sdk.Tests;
 
@@ -22,7 +23,7 @@ public abstract class TestBase : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        var settings = TestSettings.Load();
+        CodePodTestSettings settings = TestSettings.Load();
         Config = CodePodTestSupport.CreateDefaultConfig(settings);
 
         Client = new CodePodClientBuilder()
@@ -42,10 +43,10 @@ public abstract class TestBase : IAsyncLifetime
             
             // 等待一小段时间，确保后台任务已经停止
             await Task.Delay(100);
-            
+
             // 清理所有会话
-            var sessions = await Client.GetAllSessionsAsync();
-            foreach (var session in sessions)
+            IReadOnlyList<SessionInfo> sessions = await Client.GetAllSessionsAsync();
+            foreach (SessionInfo session in sessions)
             {
                 try
                 {

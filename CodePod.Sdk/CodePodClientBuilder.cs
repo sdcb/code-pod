@@ -94,10 +94,10 @@ public class CodePodClientBuilder
     public CodePodClient Build()
     {
         // 创建 DbContext 工厂
-        var dbContextFactory = CreateDbContextFactory();
+        IDbContextFactory<CodePodDbContext> dbContextFactory = CreateDbContextFactory();
 
         // 确保数据库已创建
-        using (var context = dbContextFactory.CreateDbContext())
+        using (CodePodDbContext context = dbContextFactory.CreateDbContext())
         {
             context.Database.EnsureCreated();
         }

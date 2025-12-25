@@ -104,7 +104,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         }
 
         // 计算需要预热的容器数量
-        var (idle, busy, warming, _) = await GetCountByStatusAsync(cancellationToken);
+        (int idle, int busy, int warming, int _) = await GetCountByStatusAsync(cancellationToken);
         var currentUsable = idle + busy + warming;
         var needToWarm = Math.Max(0, _config.PrewarmCount - idle);
         var canWarm = Math.Max(0, _config.MaxContainers - currentUsable);
@@ -151,7 +151,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 
             if (isDefaultConfig)
             {
-                var idleContainer = await GetFirstIdleContainerAsync(cancellationToken);
+                ContainerInfo? idleContainer = await GetFirstIdleContainerAsync(cancellationToken);
                 if (idleContainer != null)
                 {
                     idleContainer.Status = ContainerStatus.Busy;
@@ -169,7 +169,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             }
 
             // 检查是否达到最大容器数（排除正在销毁的容器）
-            var (idleCount, busyCount, warmingCount, _) = await GetCountByStatusAsync(cancellationToken);
+            (int idleCount, int busyCount, int warmingCount, int _) = await GetCountByStatusAsync(cancellationToken);
             var activeContainerCount = idleCount + busyCount + warmingCount;
             if (activeContainerCount >= _config.MaxContainers)
             {
@@ -178,7 +178,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             }
 
             // 创建新容器（使用指定的资源限制和网络模式）
-            var newContainer = await _dockerService.CreateContainerAsync(sessionId, false, resourceLimits, networkMode, cancellationToken);
+            ContainerInfo newContainer = await _dockerService.CreateContainerAsync(sessionId, false, resourceLimits, networkMode, cancellationToken);
             newContainer.Status = ContainerStatus.Busy;
             newContainer.SessionId = sessionId;
             await SaveContainerAsync(newContainer, cancellationToken);
@@ -201,7 +201,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             await _lock.WaitAsync(cancellationToken);
             try
             {
-                var (idleCount, busyCount, warmingCount, _) = await GetCountByStatusAsync(cancellationToken);
+                (int idleCount, int busyCount, int warmingCount, int _) = await GetCountByStatusAsync(cancellationToken);
                 var activeCount = idleCount + busyCount + warmingCount;
 
                 var currentAvailable = idleCount + warmingCount;
@@ -239,9 +239,9 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+            await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
             {
-                var entity = await context.Containers.FindAsync([containerId], cancellationToken);
+                ContainerEntity? entity = await context.Containers.FindAsync([containerId], cancellationToken);
                 if (entity != null)
                 {
                     entity.Status = ContainerStatus.Destroying;
@@ -274,14 +274,14 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            var (idleCount, busyCount, warmingCount, _) = await GetCountByStatusAsync(cancellationToken);
+            (int idleCount, int busyCount, int warmingCount, int _) = await GetCountByStatusAsync(cancellationToken);
             var activeCount = idleCount + busyCount + warmingCount;
             if (activeCount >= _config.MaxContainers)
             {
                 throw new InvalidOperationException($"Max container count {_config.MaxContainers} reached");
             }
 
-            var container = await CreateAndWarmContainerAsync(cancellationToken);
+            ContainerInfo container = await CreateAndWarmContainerAsync(cancellationToken);
             _logger?.LogInformation("Manually created container {ContainerId}", container.ShortId);
             return container;
         }
@@ -297,12 +297,12 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         try
         {
             List<ContainerEntity> containers;
-            await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+            await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
             {
                 containers = await context.Containers.ToListAsync(cancellationToken);
 
                 // 标记所有容器为销毁中
-                foreach (var container in containers)
+                foreach (ContainerEntity container in containers)
                 {
                     container.Status = ContainerStatus.Destroying;
                 }
@@ -311,7 +311,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             NotifyStatusChanged();
 
             // 并行删除所有容器
-            var deleteTasks = containers.Select(async c =>
+            IEnumerable<Task> deleteTasks = containers.Select(async c =>
             {
                 try
                 {
@@ -336,8 +336,8 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 
     public async Task<List<ContainerInfo>> GetAllContainersAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entities = await context.Containers.ToListAsync(cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        List<ContainerEntity> entities = await context.Containers.ToListAsync(cancellationToken);
         return entities.Select(e => e.ToModel()).ToList();
     }
 
@@ -360,16 +360,16 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         try
         {
             // 创建实际容器
-            var containerInfo = await _dockerService.CreateContainerAsync(null, true, cancellationToken);
+            ContainerInfo containerInfo = await _dockerService.CreateContainerAsync(null, true, cancellationToken);
 
             // 等待容器进入running状态
             var maxWait = TimeSpan.FromSeconds(30);
-            var waited = TimeSpan.Zero;
+            TimeSpan waited = TimeSpan.Zero;
             var pollInterval = TimeSpan.FromMilliseconds(500);
 
             while (waited < maxWait)
             {
-                var inspected = await _dockerService.GetContainerAsync(containerInfo.ContainerId, cancellationToken);
+                ContainerInfo? inspected = await _dockerService.GetContainerAsync(containerInfo.ContainerId, cancellationToken);
                 if (inspected != null && inspected.DockerStatus == "running")
                 {
                     break;
@@ -414,8 +414,8 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 
     private async Task SaveContainerAsync(ContainerInfo container, CancellationToken cancellationToken)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var existing = await context.Containers.FindAsync([container.ContainerId], cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        ContainerEntity? existing = await context.Containers.FindAsync([container.ContainerId], cancellationToken);
         if (existing == null)
         {
             context.Containers.Add(ContainerEntity.FromModel(container));
@@ -429,8 +429,8 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 
     private async Task DeleteContainerAsync(string containerId, CancellationToken cancellationToken)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await context.Containers.FindAsync([containerId], cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        ContainerEntity? entity = await context.Containers.FindAsync([containerId], cancellationToken);
         if (entity != null)
         {
             context.Containers.Remove(entity);
@@ -440,8 +440,8 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 
     private async Task<ContainerInfo?> GetFirstIdleContainerAsync(CancellationToken cancellationToken)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await context.Containers
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        ContainerEntity? entity = await context.Containers
             .Where(c => c.Status == ContainerStatus.Idle)
             .FirstOrDefaultAsync(cancellationToken);
         return entity?.ToModel();
@@ -449,7 +449,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 
     private async Task<(int idle, int busy, int warming, int destroying)> GetCountByStatusAsync(CancellationToken cancellationToken)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var counts = await context.Containers
             .GroupBy(c => c.Status)
             .Select(g => new { Status = g.Key, Count = g.Count() })
@@ -465,7 +465,7 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 
     private async Task<int> GetContainerCountAsync(CancellationToken cancellationToken)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Containers.CountAsync(cancellationToken);
     }
 

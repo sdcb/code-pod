@@ -31,7 +31,7 @@ public class CommandArrayTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        var settings = TestSettings.Load();
+        CodePodTestSettings settings = TestSettings.Load();
         _isWindowsContainer = settings.IsWindowsContainer;
         _workDir = _isWindowsContainer ? "C:\\app" : "/app";
 
@@ -61,8 +61,8 @@ public class CommandArrayTests : IAsyncLifetime
     {
         try
         {
-            var sessions = await _client.GetAllSessionsAsync();
-            foreach (var session in sessions)
+            IReadOnlyList<SessionInfo> sessions = await _client.GetAllSessionsAsync();
+            foreach (SessionInfo session in sessions)
             {
                 try
                 {
@@ -84,11 +84,11 @@ public class CommandArrayTests : IAsyncLifetime
     public async Task ExecuteCommandArray_BasicCommand_Works()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("命令数组基础测试");
+        SessionInfo session = await _client.CreateSessionAsync("命令数组基础测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 使用命令数组
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             ["python", "-c", "print('Hello from command array!')"]);
 
@@ -102,11 +102,11 @@ public class CommandArrayTests : IAsyncLifetime
     public async Task ExecuteCommandArray_AvoidShellEscaping()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("避免转义测试");
+        SessionInfo session = await _client.CreateSessionAsync("避免转义测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 包含特殊字符的参数，使用数组形式不需要转义
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             ["python", "-c", "print(\"Hello \\\"World\\\" with 'quotes' and $variables\")"]);
 
@@ -123,11 +123,11 @@ public class CommandArrayTests : IAsyncLifetime
     public async Task ExecuteCommandArray_PythonOneliner()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("Python 一行代码测试");
+        SessionInfo session = await _client.CreateSessionAsync("Python 一行代码测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - AI 常用的 Python 一行代码执行
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             ["python", "-c", "print('Hello from Python!\\nLine 2\\nLine 3')"]);
 
@@ -144,11 +144,11 @@ public class CommandArrayTests : IAsyncLifetime
     public async Task ExecuteCommandArray_PythonVersion()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("Python 命令数组测试");
+        SessionInfo session = await _client.CreateSessionAsync("Python 命令数组测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // Act
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             ["python", "--version"]);
 
@@ -162,7 +162,7 @@ public class CommandArrayTests : IAsyncLifetime
     public async Task ExecuteCommandArray_WithWorkingDirectory()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("工作目录测试");
+        SessionInfo session = await _client.CreateSessionAsync("工作目录测试");
         await WaitForSessionReadyAsync(session.Id);
 
         var targetDir = GetWorkPath("testdir");
@@ -171,7 +171,7 @@ public class CommandArrayTests : IAsyncLifetime
             ["python", "-c", $"import os; os.makedirs(r\"{EscapeForPythonRawString(targetDir)}\", exist_ok=True)"]);
 
         // Act - 在指定目录执行命令数组
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             ["python", "-c", "import os; print(os.getcwd())"],
             workingDirectory: targetDir);
@@ -186,12 +186,12 @@ public class CommandArrayTests : IAsyncLifetime
     public async Task ExecuteCommandArrayStream_Works()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("流式命令数组测试");
+        SessionInfo session = await _client.CreateSessionAsync("流式命令数组测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // Act
         var outputs = new List<string>();
-        await foreach (var evt in _client.ExecuteCommandStreamAsync(
+        await foreach (CommandOutputEvent evt in _client.ExecuteCommandStreamAsync(
             session.Id,
             ["python", "-c", "for i in range(1,4): print(f'Line{i}')"]))
         {
@@ -213,7 +213,7 @@ public class CommandArrayTests : IAsyncLifetime
     public async Task ExecuteCommandArray_ComplexPythonCode()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("复杂 Python 代码测试");
+        SessionInfo session = await _client.CreateSessionAsync("复杂 Python 代码测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // 这是 AI 经常生成的多行 Python 代码
@@ -224,7 +224,7 @@ print(json.dumps(data, indent=2))
 ";
 
         // Act - 使用命令数组，代码中的引号和特殊字符不需要转义
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             ["python", "-c", pythonCode]);
 
@@ -242,18 +242,18 @@ print(json.dumps(data, indent=2))
     public async Task CommandString_VsCommandArray_Comparison()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("字符串 vs 数组对比");
+        SessionInfo session = await _client.CreateSessionAsync("字符串 vs 数组对比");
         await WaitForSessionReadyAsync(session.Id);
 
         // 测试相同命令的两种方式
 
         // 方式1: 字符串（需要转义）
-        var resultString = await _client.ExecuteCommandAsync(
+        CommandResult resultString = await _client.ExecuteCommandAsync(
             session.Id,
             "python -c \"print('Hello World')\"");
 
         // 方式2: 数组（不需要转义）
-        var resultArray = await _client.ExecuteCommandAsync(
+        CommandResult resultArray = await _client.ExecuteCommandAsync(
             session.Id,
             ["python", "-c", "print('Hello World')"]);
 
@@ -282,7 +282,7 @@ print(json.dumps(data, indent=2))
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {
-            var session = await _client.GetSessionAsync(sessionId);
+            SessionInfo session = await _client.GetSessionAsync(sessionId);
             if (!string.IsNullOrEmpty(session.ContainerId))
             {
                 return session;

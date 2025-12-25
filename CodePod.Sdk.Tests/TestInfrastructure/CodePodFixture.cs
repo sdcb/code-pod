@@ -21,7 +21,7 @@ public sealed class CodePodFixture : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        var settings = TestSettings.Load();
+        CodePodTestSettings settings = TestSettings.Load();
         Config = CodePodTestSupport.CreateDefaultConfig(settings);
 
         Client = new CodePodClientBuilder()
@@ -34,34 +34,7 @@ public sealed class CodePodFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        try
-        {
-            Client.Dispose();
-            await Task.Delay(100);
-
-            var sessions = await Client.GetAllSessionsAsync();
-            foreach (var session in sessions)
-            {
-                try
-                {
-                    await Client.DestroySessionAsync(session.Id);
-                }
-                catch
-                {
-                    // Ignore cleanup errors
-                }
-            }
-
-            await Client.DeleteAllContainersAsync(CancellationToken.None);
-        }
-        catch
-        {
-            // Ignore cleanup errors
-        }
-        finally
-        {
-            LoggerFactory.Dispose();
-        }
+        Client.Dispose();
     }
 
     public Task<Models.SessionInfo> WaitForSessionReadyAsync(int sessionId, int maxWaitSeconds = 30) =>

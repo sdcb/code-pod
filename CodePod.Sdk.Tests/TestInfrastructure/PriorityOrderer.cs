@@ -22,7 +22,7 @@ public sealed class PriorityOrderer : ITestCaseOrderer
 
     private static int GetPriority(ITestCase testCase)
     {
-        var priority = testCase.TestMethod.Method
+        IAttributeInfo? priority = testCase.TestMethod.Method
             .GetCustomAttributes(typeof(TestPriorityAttribute).AssemblyQualifiedName!)
             .FirstOrDefault();
 

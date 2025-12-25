@@ -30,7 +30,7 @@ public class ResourceLimitsTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        var settings = TestSettings.Load();
+        CodePodTestSettings settings = TestSettings.Load();
         _isWindowsContainer = settings.IsWindowsContainer;
         var workDir = _isWindowsContainer ? "C:\\app" : "/app";
         var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
@@ -68,8 +68,8 @@ public class ResourceLimitsTests : IAsyncLifetime
     {
         try
         {
-            var sessions = await _client.GetAllSessionsAsync();
-            foreach (var session in sessions)
+            IReadOnlyList<SessionInfo> sessions = await _client.GetAllSessionsAsync();
+            foreach (SessionInfo session in sessions)
             {
                 try
                 {
@@ -91,7 +91,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     public async Task CreateSession_WithDefaultLimits_Succeeds()
     {
         // Act
-        var session = await _client.CreateSessionAsync("默认限制测试");
+        SessionInfo session = await _client.CreateSessionAsync("默认限制测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // Assert
@@ -116,7 +116,7 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         // Act
-        var session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await _client.CreateSessionAsync(options);
         await WaitForSessionReadyAsync(session.Id);
 
         // Assert
@@ -136,7 +136,7 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         // Act
-        var session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await _client.CreateSessionAsync(options);
         await WaitForSessionReadyAsync(session.Id);
 
         // Assert
@@ -160,7 +160,7 @@ public class ResourceLimitsTests : IAsyncLifetime
         };
 
         // Act & Assert
-        var ex = await Assert.ThrowsAsync<ArgumentException>(
+        ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(
             () => _client.CreateSessionAsync(options));
         
         Assert.Contains("memory", ex.Message.ToLower());
@@ -182,12 +182,12 @@ public class ResourceLimitsTests : IAsyncLifetime
             }
         };
 
-        var session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await _client.CreateSessionAsync(options);
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试分配超过限制的内存（这可能会失败或被 OOM killer 杀死）
         // 使用 dotnet 分配内存
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             "dotnet --version && echo 'Memory limit test passed'",
             timeoutSeconds: 30);
@@ -216,7 +216,7 @@ public class ResourceLimitsTests : IAsyncLifetime
             }
         };
 
-        var session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await _client.CreateSessionAsync(options);
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试创建多个子进程（可能会达到限制）
@@ -224,7 +224,7 @@ public class ResourceLimitsTests : IAsyncLifetime
             ? "1..5 | ForEach-Object { Write-Output $_ }"
             : "for i in $(seq 1 5); do echo $i; done";
 
-        var result = await _client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
+        CommandResult result = await _client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
 
         // Assert
         _output.WriteLine($"Exit code: {result.ExitCode}");
@@ -254,7 +254,7 @@ public class ResourceLimitsTests : IAsyncLifetime
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {
-            var session = await _client.GetSessionAsync(sessionId);
+            SessionInfo session = await _client.GetSessionAsync(sessionId);
             if (!string.IsNullOrEmpty(session.ContainerId))
             {
                 return session;

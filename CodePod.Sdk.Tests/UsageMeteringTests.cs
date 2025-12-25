@@ -30,7 +30,7 @@ public class UsageMeteringTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        var settings = TestSettings.Load();
+        CodePodTestSettings settings = TestSettings.Load();
         _isWindowsContainer = settings.IsWindowsContainer;
         var workDir = _isWindowsContainer ? "C:\\app" : "/app";
         var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
@@ -59,8 +59,8 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         try
         {
-            var sessions = await _client.GetAllSessionsAsync();
-            foreach (var session in sessions)
+            IReadOnlyList<SessionInfo> sessions = await _client.GetAllSessionsAsync();
+            foreach (SessionInfo session in sessions)
             {
                 try
                 {
@@ -82,14 +82,14 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task GetSessionUsage_ReturnsStats()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("使用量测试");
+        SessionInfo session = await _client.CreateSessionAsync("使用量测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // 执行一些命令产生使用量
         await _client.ExecuteCommandAsync(session.Id, "echo 'test'");
 
         // Act
-        var usage = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usage = await _client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usage);
@@ -107,11 +107,11 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task GetSessionUsage_AfterWork_ShowsActivity()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("活动使用量测试");
+        SessionInfo session = await _client.CreateSessionAsync("活动使用量测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // 获取初始使用量
-        var usageBefore = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
 
         // 执行一些工作
         for (int i = 0; i < 5; i++)
@@ -120,7 +120,7 @@ public class UsageMeteringTests : IAsyncLifetime
         }
 
         // 获取工作后的使用量
-        var usageAfter = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usageAfter = await _client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usageBefore);
@@ -138,11 +138,11 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task GetSessionUsage_MemoryIntensiveWork_ShowsHigherMemory()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("内存密集测试");
+        SessionInfo session = await _client.CreateSessionAsync("内存密集测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // 获取初始使用量
-        var usageBefore = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usageBefore = await _client.GetSessionUsageAsync(session.Id);
 
         // 执行内存密集型工作（创建大文件）
         var command = _isWindowsContainer
@@ -152,7 +152,7 @@ public class UsageMeteringTests : IAsyncLifetime
         await _client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
 
         // 获取工作后的使用量
-        var usageAfter = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usageAfter = await _client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usageBefore);
@@ -167,11 +167,11 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task SessionUsage_HasValidTimestamp()
     {
         // Arrange
-        var session = await _client.CreateSessionAsync("时间戳测试");
+        SessionInfo session = await _client.CreateSessionAsync("时间戳测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // Act
-        var usage = await _client.GetSessionUsageAsync(session.Id);
+        SessionUsage? usage = await _client.GetSessionUsageAsync(session.Id);
 
         // Assert
         Assert.NotNull(usage);
@@ -193,8 +193,8 @@ public class UsageMeteringTests : IAsyncLifetime
     public async Task MultipleSession_EachHasIndependentUsage()
     {
         // Arrange
-        var session1 = await _client.CreateSessionAsync("会话1");
-        var session2 = await _client.CreateSessionAsync("会话2");
+        SessionInfo session1 = await _client.CreateSessionAsync("会话1");
+        SessionInfo session2 = await _client.CreateSessionAsync("会话2");
         await WaitForSessionReadyAsync(session1.Id);
         await WaitForSessionReadyAsync(session2.Id);
 
@@ -208,8 +208,8 @@ public class UsageMeteringTests : IAsyncLifetime
         await _client.ExecuteCommandAsync(session2.Id, "echo 'Session 2 minimal'");
 
         // Act
-        var usage1 = await _client.GetSessionUsageAsync(session1.Id);
-        var usage2 = await _client.GetSessionUsageAsync(session2.Id);
+        SessionUsage? usage1 = await _client.GetSessionUsageAsync(session1.Id);
+        SessionUsage? usage2 = await _client.GetSessionUsageAsync(session2.Id);
 
         // Assert
         Assert.NotNull(usage1);
@@ -225,7 +225,7 @@ public class UsageMeteringTests : IAsyncLifetime
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {
-            var session = await _client.GetSessionAsync(sessionId);
+            SessionInfo session = await _client.GetSessionAsync(sessionId);
             if (!string.IsNullOrEmpty(session.ContainerId))
             {
                 return session;

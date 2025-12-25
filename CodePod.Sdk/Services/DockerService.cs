@@ -154,12 +154,12 @@ public class DockerService : IDockerService
         return await WrapDockerOperationAsync("CreateContainer", async () =>
         {
             // 使用指定的资源限制或默认值
-            var limits = resourceLimits ?? _config.DefaultResourceLimits;
+            ResourceLimits limits = resourceLimits ?? _config.DefaultResourceLimits;
             // 验证不超过最大限制
             limits.Validate(_config.MaxResourceLimits);
 
             // 使用指定的网络模式或默认值
-            var network = networkMode ?? _config.DefaultNetworkMode;
+            NetworkMode network = networkMode ?? _config.DefaultNetworkMode;
 
             var containerName = $"{_config.LabelPrefix}-{Guid.NewGuid():N}";
             var labels = new Dictionary<string, string>
@@ -198,7 +198,7 @@ public class DockerService : IDockerService
                 _logger?.LogDebug("Windows container mode: PidsLimit is not supported");
             }
 
-            var response = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
+            CreateContainerResponse response = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
             {
                 Name = containerName,
                 Image = _config.Image,
@@ -240,7 +240,7 @@ public class DockerService : IDockerService
     {
         return await WrapDockerOperationAsync("GetManagedContainers", async () =>
         {
-            var containers = await _client.Containers.ListContainersAsync(new ContainersListParameters
+            IList<ContainerListResponse> containers = await _client.Containers.ListContainersAsync(new ContainersListParameters
             {
                 All = true,
                 Filters = new Dictionary<string, IDictionary<string, bool>>
@@ -253,7 +253,7 @@ public class DockerService : IDockerService
             }, cancellationToken);
 
             var result = new List<ContainerInfo>();
-            foreach (var container in containers)
+            foreach (ContainerListResponse? container in containers)
             {
                 container.Labels.TryGetValue($"{_config.LabelPrefix}.session", out var sessionIdStr);
                 int? containerSessionId = int.TryParse(sessionIdStr, out var sid) ? sid : null;
@@ -281,7 +281,7 @@ public class DockerService : IDockerService
         {
             try
             {
-                var inspect = await _client.Containers.InspectContainerAsync(containerId, cancellationToken);
+                ContainerInspectResponse inspect = await _client.Containers.InspectContainerAsync(containerId, cancellationToken);
 
                 if (!inspect.Config.Labels.TryGetValue($"{_config.LabelPrefix}.managed", out var managed) || managed != "true")
                 {
@@ -299,7 +299,7 @@ public class DockerService : IDockerService
                     DockerStatus = inspect.State.Status,
                     Status = containerSessionId == null ? SdkContainerStatus.Idle : SdkContainerStatus.Busy,
                     CreatedAt = inspect.Created,
-                    StartedAt = DateTimeOffset.TryParse(inspect.State.StartedAt, out var started) ? started : null,
+                    StartedAt = DateTimeOffset.TryParse(inspect.State.StartedAt, out DateTimeOffset started) ? started : null,
                     SessionId = containerSessionId,
                     Labels = new Dictionary<string, string>(inspect.Config.Labels)
                 };
@@ -343,8 +343,8 @@ public class DockerService : IDockerService
 
     public async Task DeleteAllManagedContainersAsync(CancellationToken cancellationToken = default)
     {
-        var containers = await GetManagedContainersAsync(cancellationToken);
-        foreach (var container in containers)
+        List<ContainerInfo> containers = await GetManagedContainersAsync(cancellationToken);
+        foreach (ContainerInfo container in containers)
         {
             await DeleteContainerAsync(container.ContainerId, cancellationToken);
         }
@@ -363,7 +363,7 @@ public class DockerService : IDockerService
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
-            var execCreate = await _client.Exec.ExecCreateContainerAsync(containerId, new ContainerExecCreateParameters
+            ContainerExecCreateResponse execCreate = await _client.Exec.ExecCreateContainerAsync(containerId, new ContainerExecCreateParameters
             {
                 AttachStdout = true,
                 AttachStderr = true,
@@ -374,16 +374,16 @@ public class DockerService : IDockerService
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
-            using var stream = await _client.Exec.StartAndAttachContainerExecAsync(execCreate.ID, tty: false, cts.Token);
-            var (stdout, stderr) = await ReadOutputAsync(stream, cts.Token);
+            using MultiplexedStream stream = await _client.Exec.StartAndAttachContainerExecAsync(execCreate.ID, tty: false, cts.Token);
+            (string? stdout, string? stderr) = await ReadOutputAsync(stream, cts.Token);
 
-            var inspect = await _client.Exec.InspectContainerExecAsync(execCreate.ID, cancellationToken);
+            ContainerExecInspectResponse inspect = await _client.Exec.InspectContainerExecAsync(execCreate.ID, cancellationToken);
 
             sw.Stop();
 
             // 应用输出截断
-            var (truncatedStdout, stdoutTruncated) = TruncateOutput(stdout);
-            var (truncatedStderr, stderrTruncated) = TruncateOutput(stderr);
+            (string? truncatedStdout, bool stdoutTruncated) = TruncateOutput(stdout);
+            (string? truncatedStderr, bool stderrTruncated) = TruncateOutput(stderr);
 
             return new CommandResult
             {
@@ -417,13 +417,13 @@ public class DockerService : IDockerService
         var sw = System.Diagnostics.Stopwatch.StartNew();
         string? execId = null;
 
-        var container = await GetContainerAsync(containerId, cancellationToken);
+        ContainerInfo? container = await GetContainerAsync(containerId, cancellationToken);
         if (container == null)
         {
             throw new ContainerNotFoundException(containerId);
         }
 
-        var execCreate = await _client.Exec.ExecCreateContainerAsync(containerId, new ContainerExecCreateParameters
+        ContainerExecCreateResponse execCreate = await _client.Exec.ExecCreateContainerAsync(containerId, new ContainerExecCreateParameters
         {
             AttachStdout = true,
             AttachStderr = true,
@@ -446,7 +446,7 @@ public class DockerService : IDockerService
 
             while (!cts.Token.IsCancellationRequested)
             {
-                var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cts.Token);
+                MultiplexedStream.ReadResult result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cts.Token);
 
                 if (result.EOF || result.Count == 0)
                 {
@@ -474,7 +474,7 @@ public class DockerService : IDockerService
         long exitCode = -1;
         try
         {
-            var inspect = await _client.Exec.InspectContainerExecAsync(execId, CancellationToken.None);
+            ContainerExecInspectResponse inspect = await _client.Exec.InspectContainerExecAsync(execId, CancellationToken.None);
             exitCode = inspect.ExitCode;
         }
         catch (Exception ex)
@@ -491,7 +491,7 @@ public class DockerService : IDockerService
         {
             var relativePath = containerPath.TrimStart('/');
             await using var tarStream = new MemoryStream();
-            using (var writer = WriterFactory.Open(tarStream, ArchiveType.Tar, new WriterOptions(CompressionType.None) { LeaveStreamOpen = true }))
+            using (IWriter writer = WriterFactory.Open(tarStream, ArchiveType.Tar, new WriterOptions(CompressionType.None) { LeaveStreamOpen = true }))
             {
                 await using var dataStream = new MemoryStream(content);
                 writer.Write(relativePath, dataStream, null);
@@ -516,18 +516,18 @@ public class DockerService : IDockerService
 
             try
             {
-                var archive = await _client.Containers.GetArchiveFromContainerAsync(
+                GetArchiveFromContainerResponse archive = await _client.Containers.GetArchiveFromContainerAsync(
                     containerId,
                     new GetArchiveFromContainerParameters { Path = path },
                     false,
                     cancellationToken);
 
-                await using var stream = archive.Stream;
-                using var reader = ReaderFactory.Open(stream);
+                await using Stream stream = archive.Stream;
+                using IReader reader = ReaderFactory.Open(stream);
 
                 while (reader.MoveToNextEntry())
                 {
-                    var entry = reader.Entry;
+                    IEntry entry = reader.Entry;
                     if (string.IsNullOrWhiteSpace(entry.Key))
                         continue;
 
@@ -562,18 +562,18 @@ public class DockerService : IDockerService
     {
         return await WrapDockerOperationAsync("DownloadFile", async () =>
         {
-            var archive = await _client.Containers.GetArchiveFromContainerAsync(
+            GetArchiveFromContainerResponse archive = await _client.Containers.GetArchiveFromContainerAsync(
                 containerId,
                 new GetArchiveFromContainerParameters { Path = filePath },
                 false,
                 cancellationToken);
 
-            await using var stream = archive.Stream;
-            using var reader = ReaderFactory.Open(stream);
+            await using Stream stream = archive.Stream;
+            using IReader reader = ReaderFactory.Open(stream);
 
             while (reader.MoveToNextEntry())
             {
-                var entry = reader.Entry;
+                IEntry entry = reader.Entry;
                 if (!entry.IsDirectory)
                 {
                     await using var memory = new MemoryStream();
@@ -656,7 +656,7 @@ public class DockerService : IDockerService
                 // 网络 IO
                 if (statsData.Networks != null)
                 {
-                    foreach (var network in statsData.Networks.Values)
+                    foreach (NetworkStats? network in statsData.Networks.Values)
                     {
                         usage.NetworkRxBytes += (long)network.RxBytes;
                         usage.NetworkTxBytes += (long)network.TxBytes;
@@ -675,7 +675,7 @@ public class DockerService : IDockerService
 
     private (string output, bool truncated) TruncateOutput(string output)
     {
-        var options = _config.OutputOptions;
+        OutputOptions options = _config.OutputOptions;
         var bytes = Encoding.UTF8.GetBytes(output);
 
         if (bytes.Length <= options.MaxOutputBytes)
@@ -716,7 +716,7 @@ public class DockerService : IDockerService
 
         while (true)
         {
-            var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cancellationToken);
+            MultiplexedStream.ReadResult result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cancellationToken);
             if (result.EOF || result.Count == 0)
                 break;
 

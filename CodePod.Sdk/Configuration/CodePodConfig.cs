@@ -71,7 +71,7 @@ public class CodePodConfig
         if (IsWindowsContainer)
         {
             // Windows cmd: 使用 mkdir 创建目录 (如果存在则忽略)
-            var commands = paths.Select(p => $"if not exist \"{p.Replace('/', '\\')}\" mkdir \"{p.Replace('/', '\\')}\"");
+            IEnumerable<string> commands = paths.Select(p => $"if not exist \"{p.Replace('/', '\\')}\" mkdir \"{p.Replace('/', '\\')}\"");
             return string.Join(" & ", commands);
         }
         else

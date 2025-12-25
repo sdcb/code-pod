@@ -30,7 +30,7 @@ public class NetworkIsolationTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        var settings = TestSettings.Load();
+        CodePodTestSettings settings = TestSettings.Load();
         _isWindowsContainer = settings.IsWindowsContainer;
         var workDir = _isWindowsContainer ? "C:\\app" : "/app";
         var image = _isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage;
@@ -60,8 +60,8 @@ public class NetworkIsolationTests : IAsyncLifetime
     {
         try
         {
-            var sessions = await _client.GetAllSessionsAsync();
-            foreach (var session in sessions)
+            IReadOnlyList<SessionInfo> sessions = await _client.GetAllSessionsAsync();
+            foreach (SessionInfo session in sessions)
             {
                 try
                 {
@@ -92,12 +92,12 @@ public class NetworkIsolationTests : IAsyncLifetime
             NetworkMode = NetworkMode.None
         };
 
-        var session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await _client.CreateSessionAsync(options);
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试访问外部网络
         // 使用 curl 或 wget 测试（可能需要超时）
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             "timeout 5 curl -s https://www.google.com || echo 'Network access blocked'",
             timeoutSeconds: 15);
@@ -124,11 +124,11 @@ public class NetworkIsolationTests : IAsyncLifetime
             NetworkMode = NetworkMode.None
         };
 
-        var session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await _client.CreateSessionAsync(options);
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | head -1 || echo 'no_external_interfaces'",
             timeoutSeconds: 10);
@@ -157,11 +157,11 @@ public class NetworkIsolationTests : IAsyncLifetime
             NetworkMode = NetworkMode.Bridge
         };
 
-        var session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await _client.CreateSessionAsync(options);
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 尝试 DNS 解析（不需要实际下载，更快更可靠）
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             "nslookup google.com 2>&1 || host google.com 2>&1 || echo 'DNS lookup test'",
             timeoutSeconds: 15);
@@ -189,11 +189,11 @@ public class NetworkIsolationTests : IAsyncLifetime
             NetworkMode = NetworkMode.Bridge
         };
 
-        var session = await _client.CreateSessionAsync(options);
+        SessionInfo session = await _client.CreateSessionAsync(options);
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口（使用 cat /proc/net/dev 作为备选）
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 || ip addr show 2>/dev/null || echo 'no_network_tools'",
             timeoutSeconds: 10);
@@ -217,11 +217,11 @@ public class NetworkIsolationTests : IAsyncLifetime
         if (_isWindowsContainer) return;
 
         // Arrange - 客户端配置默认使用 None
-        var session = await _client.CreateSessionAsync("默认网络模式测试");
+        SessionInfo session = await _client.CreateSessionAsync("默认网络模式测试");
         await WaitForSessionReadyAsync(session.Id);
 
         // Act - 检查网络接口 (使用 /proc/net/dev)
-        var result = await _client.ExecuteCommandAsync(
+        CommandResult result = await _client.ExecuteCommandAsync(
             session.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | head -1 || echo 'no_external_interfaces'",
             timeoutSeconds: 10);
@@ -243,7 +243,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         if (_isWindowsContainer) return;
 
         // 测试 1: 创建 None 模式会话
-        var sessionNone = await _client.CreateSessionAsync(new SessionOptions
+        SessionInfo sessionNone = await _client.CreateSessionAsync(new SessionOptions
         {
             Name = "None 模式",
             NetworkMode = NetworkMode.None
@@ -251,7 +251,7 @@ public class NetworkIsolationTests : IAsyncLifetime
         await WaitForSessionReadyAsync(sessionNone.Id);
 
         // 测试 2: 创建 Bridge 模式会话
-        var sessionBridge = await _client.CreateSessionAsync(new SessionOptions
+        SessionInfo sessionBridge = await _client.CreateSessionAsync(new SessionOptions
         {
             Name = "Bridge 模式",
             NetworkMode = NetworkMode.Bridge
@@ -260,12 +260,12 @@ public class NetworkIsolationTests : IAsyncLifetime
 
         // 验证两个会话有不同的网络配置
         // 使用 /proc/net/dev 来检查网络接口
-        var resultNone = await _client.ExecuteCommandAsync(
+        CommandResult resultNone = await _client.ExecuteCommandAsync(
             sessionNone.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | wc -l",
             timeoutSeconds: 10);
 
-        var resultBridge = await _client.ExecuteCommandAsync(
+        CommandResult resultBridge = await _client.ExecuteCommandAsync(
             sessionBridge.Id,
             "cat /proc/net/dev | grep -v lo | tail -n +3 | wc -l",
             timeoutSeconds: 10);
@@ -283,7 +283,7 @@ public class NetworkIsolationTests : IAsyncLifetime
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {
-            var session = await _client.GetSessionAsync(sessionId);
+            SessionInfo session = await _client.GetSessionAsync(sessionId);
             if (!string.IsNullOrEmpty(session.ContainerId))
             {
                 return session;

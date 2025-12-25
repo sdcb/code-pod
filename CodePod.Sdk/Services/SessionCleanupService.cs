@@ -42,16 +42,16 @@ public class SessionCleanupService : ISessionCleanupService
     public async Task CleanupExpiredSessionsAsync(CancellationToken cancellationToken = default)
     {
         List<SessionEntity> activeSessions;
-        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
             activeSessions = await context.Sessions
                 .Where(s => s.Status != SessionStatus.Destroyed)
                 .ToListAsync(cancellationToken);
         }
 
-        var now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
 
-        foreach (var session in activeSessions)
+        foreach (SessionEntity session in activeSessions)
         {
             // 跳过正在执行命令的会话
             if (session.IsExecutingCommand)

@@ -1,3 +1,4 @@
+using CodePod.Sdk.Models;
 using System.Diagnostics;
 using Xunit;
 
@@ -23,7 +24,7 @@ public class PerformanceTests : TestBase
                 var sw = Stopwatch.StartNew();
 
                 // 创建会话
-                var session = await Client.CreateSessionAsync($"性能测试-{round}");
+                SessionInfo session = await Client.CreateSessionAsync($"性能测试-{round}");
                 createdSessions.Add(session.Id);
 
                 // 等待会话就绪
@@ -61,7 +62,7 @@ public class PerformanceTests : TestBase
     public async Task CommandExecution_Performance()
     {
         // Arrange
-        var session = await Client.CreateSessionAsync("命令性能测试");
+        SessionInfo session = await Client.CreateSessionAsync("命令性能测试");
         await WaitForSessionReadyAsync(session.Id);
 
         var commandExecTimes = new List<double>();
@@ -71,8 +72,8 @@ public class PerformanceTests : TestBase
             for (int i = 0; i < 5; i++)
             {
                 var sw = Stopwatch.StartNew();
-                
-                var result = await Client.ExecuteCommandAsync(
+
+                CommandResult result = await Client.ExecuteCommandAsync(
                     session.Id,
                     "echo 'Performance test'");
                 
@@ -106,11 +107,11 @@ public class PerformanceTests : TestBase
                 var totalSw = Stopwatch.StartNew();
 
                 // 1. 创建会话
-                var session = await Client.CreateSessionAsync($"完整流程-{round}");
+                SessionInfo session = await Client.CreateSessionAsync($"完整流程-{round}");
                 await WaitForSessionReadyAsync(session.Id);
 
                 // 2. 执行一个简单命令
-                var result = await Client.ExecuteCommandAsync(
+                CommandResult result = await Client.ExecuteCommandAsync(
                     session.Id,
                     "echo 'Hello World!'");
                 Assert.Equal(0, result.ExitCode);
@@ -123,7 +124,7 @@ public class PerformanceTests : TestBase
                     "Performance test content"u8.ToArray());
 
                 // 4. 列出目录
-                var files = await Client.ListDirectoryAsync(session.Id, WorkDir);
+                List<FileEntry> files = await Client.ListDirectoryAsync(session.Id, WorkDir);
                 Assert.Contains(files, f => f.Name == "perf-test.txt");
 
                 // 5. 下载文件
@@ -149,8 +150,8 @@ public class PerformanceTests : TestBase
         catch
         {
             // Cleanup any remaining sessions
-            var sessions = await Client.GetAllSessionsAsync();
-            foreach (var session in sessions)
+            IReadOnlyList<SessionInfo> sessions = await Client.GetAllSessionsAsync();
+            foreach (SessionInfo session in sessions)
             {
                 try
                 {

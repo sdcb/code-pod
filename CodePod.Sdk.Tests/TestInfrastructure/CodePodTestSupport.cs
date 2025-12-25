@@ -1,4 +1,5 @@
 using CodePod.Sdk.Configuration;
+using CodePod.Sdk.Models;
 using CodePod.Sdk.Tests;
 
 namespace CodePod.Sdk.Tests.TestInfrastructure;
@@ -26,7 +27,7 @@ public static class CodePodTestSupport
     {
         for (int i = 0; i < maxWaitSeconds * 2; i++)
         {
-            var session = await client.GetSessionAsync(sessionId);
+            SessionInfo session = await client.GetSessionAsync(sessionId);
             if (!string.IsNullOrEmpty(session.ContainerId))
             {
                 return session;

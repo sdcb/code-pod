@@ -111,13 +111,13 @@ public class SessionService : ISessionService
         }
 
         // 验证资源限制
-        var resourceLimits = options.ResourceLimits ?? _config.DefaultResourceLimits.Clone();
+        ResourceLimits resourceLimits = options.ResourceLimits ?? _config.DefaultResourceLimits.Clone();
         resourceLimits.Validate(_config.MaxResourceLimits);
 
         // 网络模式
-        var networkMode = options.NetworkMode ?? _config.DefaultNetworkMode;
+        NetworkMode networkMode = options.NetworkMode ?? _config.DefaultNetworkMode;
 
-        var now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
 
         var sessionEntity = new SessionEntity
         {
@@ -131,7 +131,7 @@ public class SessionService : ISessionService
         };
 
         // 先保存以获取自增 ID
-        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
             context.Sessions.Add(sessionEntity);
             await context.SaveChangesAsync(cancellationToken);
@@ -142,8 +142,8 @@ public class SessionService : ISessionService
         // 更新 Name（如果未指定则使用 ID）
         if (string.IsNullOrEmpty(sessionEntity.Name))
         {
-            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
             if (entity != null)
             {
                 entity.Name = $"Session-{sessionId}";
@@ -155,12 +155,12 @@ public class SessionService : ISessionService
             sessionId, resourceLimits.MemoryBytes / 1024 / 1024, resourceLimits.CpuCores, networkMode);
 
         // 尝试分配容器（带资源限制和网络模式）
-        var container = await _poolService.AcquireContainerAsync(sessionId, resourceLimits, networkMode, cancellationToken);
+        ContainerInfo? container = await _poolService.AcquireContainerAsync(sessionId, resourceLimits, networkMode, cancellationToken);
 
         if (container != null)
         {
-            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
             if (entity != null)
             {
                 entity.ContainerId = container.ContainerId;
@@ -173,8 +173,8 @@ public class SessionService : ISessionService
         {
             // 加入队列
             var queuedCount = await GetQueuedCountAsync(cancellationToken);
-            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
             if (entity != null)
             {
                 entity.QueuePosition = queuedCount;
@@ -185,17 +185,17 @@ public class SessionService : ISessionService
         }
 
         // 返回最新状态
-        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
             return entity!.ToModel();
         }
     }
 
     public async Task<IEnumerable<SessionInfo>> GetAllSessionsAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entities = await context.Sessions
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        List<SessionEntity> entities = await context.Sessions
             .Where(s => s.Status != SessionStatus.Destroyed)
             .ToListAsync(cancellationToken);
         return entities.Select(e => e.ToModel()).ToList();
@@ -203,8 +203,8 @@ public class SessionService : ISessionService
 
     public async Task<SessionInfo?> GetSessionAsync(int sessionId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
         if (entity == null || entity.Status == SessionStatus.Destroyed)
         {
             return null;
@@ -216,9 +216,9 @@ public class SessionService : ISessionService
     {
         string? containerId = null;
 
-        await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+        await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
         {
-            var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+            SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
             if (entity == null || entity.Status == SessionStatus.Destroyed)
             {
                 return;
@@ -246,8 +246,8 @@ public class SessionService : ISessionService
 
     public async Task UpdateSessionActivityAsync(int sessionId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
         if (entity != null)
         {
             entity.LastActivityAt = DateTimeOffset.UtcNow;
@@ -257,14 +257,14 @@ public class SessionService : ISessionService
 
     public async Task<int> GetQueuedCountAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Sessions.CountAsync(s => s.Status == SessionStatus.Queued, cancellationToken);
     }
 
     public async Task OnContainerDeletedAsync(string containerId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await context.Sessions.FirstOrDefaultAsync(s => s.ContainerId == containerId, cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        SessionEntity? entity = await context.Sessions.FirstOrDefaultAsync(s => s.ContainerId == containerId, cancellationToken);
         if (entity != null)
         {
             entity.Status = SessionStatus.Destroyed;
@@ -276,8 +276,8 @@ public class SessionService : ISessionService
 
     public async Task IncrementCommandCountAsync(int sessionId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
         if (entity != null)
         {
             entity.CommandCount++;
@@ -288,8 +288,8 @@ public class SessionService : ISessionService
 
     public async Task SetExecutingCommandAsync(int sessionId, bool isExecuting, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        SessionEntity? entity = await context.Sessions.FindAsync([sessionId], cancellationToken);
         if (entity != null)
         {
             entity.IsExecutingCommand = isExecuting;
@@ -333,7 +333,7 @@ public class SessionService : ISessionService
 
             // 获取队列中的会话
             List<SessionEntity> queuedEntities;
-            await using (var context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+            await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
             {
                 queuedEntities = await context.Sessions
                     .Where(s => s.Status == SessionStatus.Queued)
@@ -341,17 +341,17 @@ public class SessionService : ISessionService
                     .ToListAsync(cancellationToken);
             }
 
-            foreach (var queuedEntity in queuedEntities)
+            foreach (SessionEntity queuedEntity in queuedEntities)
             {
                 // 重新获取最新状态
-                await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-                var entity = await context.Sessions.FindAsync([queuedEntity.Id], cancellationToken);
+                await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+                SessionEntity? entity = await context.Sessions.FindAsync([queuedEntity.Id], cancellationToken);
                 if (entity == null || entity.Status != SessionStatus.Queued)
                 {
                     continue;
                 }
 
-                var container = await _poolService.AcquireContainerAsync(entity.Id, cancellationToken);
+                ContainerInfo? container = await _poolService.AcquireContainerAsync(entity.Id, cancellationToken);
                 if (container != null)
                 {
                     entity.ContainerId = container.ContainerId;
@@ -380,14 +380,14 @@ public class SessionService : ISessionService
 
     private async Task UpdateQueuePositionsAsync(CancellationToken cancellationToken)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var queuedEntities = await context.Sessions
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        List<SessionEntity> queuedEntities = await context.Sessions
             .Where(s => s.Status == SessionStatus.Queued)
             .OrderBy(s => s.QueuePosition)
             .ToListAsync(cancellationToken);
 
         var position = 1;
-        foreach (var entity in queuedEntities)
+        foreach (SessionEntity? entity in queuedEntities)
         {
             entity.QueuePosition = position++;
         }

@@ -53,7 +53,7 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<SystemStatus> GetStatusAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
 
         var counts = await context.Containers
             .GroupBy(c => c.Status)
@@ -65,7 +65,7 @@ public class CodePodClient : IDisposable
         var warming = counts.FirstOrDefault(c => c.Status == ContainerStatus.Warming)?.Count ?? 0;
         var destroying = counts.FirstOrDefault(c => c.Status == ContainerStatus.Destroying)?.Count ?? 0;
 
-        var sessions = await _sessionService.GetAllSessionsAsync(cancellationToken);
+        IEnumerable<SessionInfo> sessions = await _sessionService.GetAllSessionsAsync(cancellationToken);
         var sessionList = sessions.ToList();
 
         return new SystemStatus
@@ -118,7 +118,7 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<SessionInfo> GetSessionAsync(int sessionId, CancellationToken cancellationToken = default)
     {
-        var session = await _sessionService.GetSessionAsync(sessionId, cancellationToken);
+        SessionInfo? session = await _sessionService.GetSessionAsync(sessionId, cancellationToken);
         return session ?? throw new SessionNotFoundException(sessionId);
     }
 
@@ -127,7 +127,7 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<IReadOnlyList<SessionInfo>> GetAllSessionsAsync(CancellationToken cancellationToken = default)
     {
-        var sessions = await _sessionService.GetAllSessionsAsync(cancellationToken);
+        IEnumerable<SessionInfo> sessions = await _sessionService.GetAllSessionsAsync(cancellationToken);
         return sessions.ToList();
     }
 
@@ -148,12 +148,12 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<CommandResult> ExecuteCommandAsync(int sessionId, string command, string? workingDirectory = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
         
         await _sessionService.SetExecutingCommandAsync(sessionId, true, cancellationToken);
         try
         {
-            var result = await _dockerService.ExecuteCommandAsync(
+            CommandResult result = await _dockerService.ExecuteCommandAsync(
                 session.ContainerId!,
                 command,
                 workingDirectory ?? _config.WorkDir,
@@ -175,12 +175,12 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<CommandResult> ExecuteCommandAsync(int sessionId, string[] command, string? workingDirectory = null, int? timeoutSeconds = null, CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
         
         await _sessionService.SetExecutingCommandAsync(sessionId, true, cancellationToken);
         try
         {
-            var result = await _dockerService.ExecuteCommandAsync(
+            CommandResult result = await _dockerService.ExecuteCommandAsync(
                 session.ContainerId!,
                 command,
                 workingDirectory ?? _config.WorkDir,
@@ -206,12 +206,12 @@ public class CodePodClient : IDisposable
         int? timeoutSeconds = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
         
         await _sessionService.SetExecutingCommandAsync(sessionId, true, cancellationToken);
         try
         {
-            await foreach (var outputEvent in _dockerService.ExecuteCommandStreamAsync(
+            await foreach (CommandOutputEvent outputEvent in _dockerService.ExecuteCommandStreamAsync(
                 session.ContainerId!,
                 command,
                 workingDirectory ?? _config.WorkDir,
@@ -239,12 +239,12 @@ public class CodePodClient : IDisposable
         int? timeoutSeconds = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
         
         await _sessionService.SetExecutingCommandAsync(sessionId, true, cancellationToken);
         try
         {
-            await foreach (var outputEvent in _dockerService.ExecuteCommandStreamAsync(
+            await foreach (CommandOutputEvent outputEvent in _dockerService.ExecuteCommandStreamAsync(
                 session.ContainerId!,
                 command,
                 workingDirectory ?? _config.WorkDir,
@@ -271,7 +271,7 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task UploadFileAsync(int sessionId, string targetPath, byte[] content, CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
         await _dockerService.UploadFileAsync(session.ContainerId!, targetPath, content, cancellationToken);
         await _sessionService.UpdateSessionActivityAsync(sessionId, cancellationToken);
     }
@@ -281,8 +281,8 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<List<FileEntry>> ListDirectoryAsync(int sessionId, string path, CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
-        var result = await _dockerService.ListDirectoryAsync(session.ContainerId!, path, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        List<FileEntry> result = await _dockerService.ListDirectoryAsync(session.ContainerId!, path, cancellationToken);
         await _sessionService.UpdateSessionActivityAsync(sessionId, cancellationToken);
         return result;
     }
@@ -292,7 +292,7 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<byte[]> DownloadFileAsync(int sessionId, string filePath, CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
         var result = await _dockerService.DownloadFileAsync(session.ContainerId!, filePath, cancellationToken);
         await _sessionService.UpdateSessionActivityAsync(sessionId, cancellationToken);
         return result;
@@ -303,9 +303,9 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task DeleteFileAsync(int sessionId, string filePath, CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
         var deleteCommand = _config.GetDeleteFileCommand(filePath);
-        var result = await _dockerService.ExecuteCommandAsync(session.ContainerId!, deleteCommand, "/", 10, cancellationToken);
+        CommandResult result = await _dockerService.ExecuteCommandAsync(session.ContainerId!, deleteCommand, "/", 10, cancellationToken);
         if (result.ExitCode != 0)
         {
             throw new InvalidOperationException($"Failed to delete file: {result.Stderr}");
@@ -367,8 +367,8 @@ public class CodePodClient : IDisposable
     /// </summary>
     public async Task<SessionUsage?> GetSessionUsageAsync(int sessionId, CancellationToken cancellationToken = default)
     {
-        var session = await GetActiveSessionAsync(sessionId, cancellationToken);
-        var usage = await _dockerService.GetContainerStatsAsync(session.ContainerId!, cancellationToken);
+        SessionInfo session = await GetActiveSessionAsync(sessionId, cancellationToken);
+        SessionUsage? usage = await _dockerService.GetContainerStatsAsync(session.ContainerId!, cancellationToken);
         
         if (usage != null)
         {
@@ -422,7 +422,7 @@ public class CodePodClient : IDisposable
 
     private async Task<SessionInfo> GetActiveSessionAsync(int sessionId, CancellationToken cancellationToken)
     {
-        var session = await _sessionService.GetSessionAsync(sessionId, cancellationToken);
+        SessionInfo? session = await _sessionService.GetSessionAsync(sessionId, cancellationToken);
         if (session == null)
         {
             throw new SessionNotFoundException(sessionId);

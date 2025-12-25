@@ -77,7 +77,7 @@ public class ContainerEntity
     /// </summary>
     public ContainerInfo ToModel()
     {
-        var labels = string.IsNullOrEmpty(LabelsJson)
+        Dictionary<string, string> labels = string.IsNullOrEmpty(LabelsJson)
             ? new Dictionary<string, string>()
             : JsonSerializer.Deserialize<Dictionary<string, string>>(LabelsJson) ?? new Dictionary<string, string>();
 
@@ -152,7 +152,7 @@ public class SessionEntity
     /// </summary>
     public SessionInfo ToModel()
     {
-        var resourceLimits = string.IsNullOrEmpty(ResourceLimitsJson)
+        ResourceLimits? resourceLimits = string.IsNullOrEmpty(ResourceLimitsJson)
             ? null
             : JsonSerializer.Deserialize<ResourceLimits>(ResourceLimitsJson);
 
