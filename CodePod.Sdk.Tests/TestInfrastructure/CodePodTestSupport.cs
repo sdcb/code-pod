@@ -14,7 +14,7 @@ public static class CodePodTestSupport
             IsWindowsContainer = isWindowsContainer,
             DockerEndpoint = settings.DockerEndpoint,
             Image = isWindowsContainer ? settings.DotnetSdkWindowsImage : settings.DotnetSdkLinuxImage,
-            PrewarmCount = 1,
+            PrewarmCount = 0,
             MaxContainers = 10,
             SessionTimeoutSeconds = 1800,
             WorkDir = isWindowsContainer ? "C:\\app" : "/app",

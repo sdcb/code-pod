@@ -22,7 +22,7 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 创建 CodePodClient 实例
     /// </summary>
-    public CodePodClient(
+    internal CodePodClient(
         Services.IDockerService dockerService,
         Services.IDockerPoolService poolService,
         Services.ISessionService sessionService,
@@ -41,10 +41,31 @@ public class CodePodClient : IDisposable
     /// <summary>
     /// 初始化 SDK（预热容器等）
     /// </summary>
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    public Task InitializeAsync(CancellationToken cancellationToken = default) =>
+        InitializeAsync(syncInitialState: false, preloadImages: false, cancellationToken);
+
+    /// <summary>
+    /// 初始化 SDK（可选状态同步/镜像预加载/预热）
+    /// </summary>
+    public async Task InitializeAsync(bool syncInitialState = false, bool preloadImages = false, CancellationToken cancellationToken = default)
     {
         if (_initialized) return;
-        await _poolService.EnsurePrewarmAsync(cancellationToken);
+
+        if (preloadImages)
+        {
+            await _dockerService.EnsureImageAsync(cancellationToken);
+        }
+
+        if (syncInitialState)
+        {
+            await _poolService.SyncStateAsync(cancellationToken);
+        }
+
+        if (_config.PrewarmCount > 0)
+        {
+            await _poolService.EnsurePrewarmAsync(cancellationToken);
+        }
+
         _initialized = true;
     }
 

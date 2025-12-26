@@ -139,80 +139,94 @@ public class DockerService : IDockerService
     {
         return await WrapDockerOperationAsync("CreateContainer", async () =>
         {
-            // 使用指定的资源限制或默认值
-            ResourceLimits limits = resourceLimits ?? _config.DefaultResourceLimits;
-            // 验证不超过最大限制
-            limits.Validate(_config.MaxResourceLimits);
-
-            // 使用指定的网络模式或默认值
-            NetworkMode network = networkMode ?? _config.DefaultNetworkMode;
-
-            string containerName = $"{_config.LabelPrefix}-{Guid.NewGuid():N}";
-            Dictionary<string, string> labels = new()
+            try
             {
-                [$"{_config.LabelPrefix}.managed"] = "true",
-                [$"{_config.LabelPrefix}.created"] = DateTimeOffset.UtcNow.ToString("o"),
-                [$"{_config.LabelPrefix}.memory"] = limits.MemoryBytes.ToString(),
-                [$"{_config.LabelPrefix}.cpu"] = limits.CpuCores.ToString("F2"),
-                [$"{_config.LabelPrefix}.pids"] = limits.MaxProcesses.ToString(),
-                [$"{_config.LabelPrefix}.network"] = network.ToString().ToLower()
-            };
-
-            // 构建 HostConfig，Windows 容器不支持某些选项
-            HostConfig hostConfig = new()
-            {
-                NetworkMode = network.ToDockerNetworkMode(_config.IsWindowsContainer),
-                Memory = limits.MemoryBytes,
-                NanoCPUs = (long)(limits.CpuCores * 1_000_000_000) // 1e9 = 1 CPU
-            };
-
-            if (!_config.IsWindowsContainer)
-            {
-                // Linux 容器：支持 PidsLimit
-                hostConfig.PidsLimit = limits.MaxProcesses;
+                return await CreateContainerCoreAsync(resourceLimits, networkMode, cancellationToken);
             }
-            else
+            catch (DockerApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                // Windows 容器：Windows Server 2025 支持 Memory 和 CPU 限制
-                // 但不支持 PidsLimit（这是 Linux cgroups 特有功能）
-                _logger?.LogDebug("Windows container mode: PidsLimit is not supported");
+                // Image may not exist locally when preloadImages=false. Pull once and retry.
+                await EnsureImageAsync(cancellationToken);
+                return await CreateContainerCoreAsync(resourceLimits, networkMode, cancellationToken);
             }
-
-            CreateContainerResponse response = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
-            {
-                Name = containerName,
-                Image = _config.Image,
-                Tty = false,
-                AttachStdout = false,
-                AttachStderr = false,
-                Cmd = _config.GetKeepAliveCommand(),
-                WorkingDir = _config.WorkDir,
-                Labels = labels,
-                HostConfig = hostConfig
-            }, cancellationToken);
-
-            await _client.Containers.StartContainerAsync(response.ID, new ContainerStartParameters(), cancellationToken);
-
-            _logger?.LogInformation("Created and started container {ContainerId} (name: {Name}, memory: {Memory}MB, cpu: {Cpu}, pids: {Pids}, network: {Network})",
-                response.ID[..12], containerName,
-                limits.MemoryBytes / 1024 / 1024, limits.CpuCores, limits.MaxProcesses, network);
-
-            // 创建工作目录和 artifacts 目录
-            string mkdirCmd = _config.GetMkdirCommand(_config.WorkDir, $"{_config.WorkDir}/{_config.ArtifactsDir}");
-            await ExecuteCommandAsync(response.ID, mkdirCmd, "/", 30, cancellationToken);
-
-            return new ContainerInfo
-            {
-                ContainerId = response.ID,
-                Name = containerName,
-                Image = _config.Image,
-                DockerStatus = "running",
-                Status = SdkContainerStatus.Warming,
-                CreatedAt = DateTimeOffset.UtcNow,
-                StartedAt = DateTimeOffset.UtcNow,
-                Labels = labels
-            };
         });
+    }
+
+    private async Task<ContainerInfo> CreateContainerCoreAsync(ResourceLimits? resourceLimits, NetworkMode? networkMode, CancellationToken cancellationToken)
+    {
+        // 使用指定的资源限制或默认值
+        ResourceLimits limits = resourceLimits ?? _config.DefaultResourceLimits;
+        // 验证不超过最大限制
+        limits.Validate(_config.MaxResourceLimits);
+
+        // 使用指定的网络模式或默认值
+        NetworkMode network = networkMode ?? _config.DefaultNetworkMode;
+
+        string containerName = $"{_config.LabelPrefix}-{Guid.NewGuid():N}";
+        Dictionary<string, string> labels = new()
+        {
+            [$"{_config.LabelPrefix}.managed"] = "true",
+            [$"{_config.LabelPrefix}.created"] = DateTimeOffset.UtcNow.ToString("o"),
+            [$"{_config.LabelPrefix}.memory"] = limits.MemoryBytes.ToString(),
+            [$"{_config.LabelPrefix}.cpu"] = limits.CpuCores.ToString("F2"),
+            [$"{_config.LabelPrefix}.pids"] = limits.MaxProcesses.ToString(),
+            [$"{_config.LabelPrefix}.network"] = network.ToString().ToLower()
+        };
+
+        // 构建 HostConfig，Windows 容器不支持某些选项
+        HostConfig hostConfig = new()
+        {
+            NetworkMode = network.ToDockerNetworkMode(_config.IsWindowsContainer),
+            Memory = limits.MemoryBytes,
+            NanoCPUs = (long)(limits.CpuCores * 1_000_000_000) // 1e9 = 1 CPU
+        };
+
+        if (!_config.IsWindowsContainer)
+        {
+            // Linux 容器：支持 PidsLimit
+            hostConfig.PidsLimit = limits.MaxProcesses;
+        }
+        else
+        {
+            // Windows 容器：Windows Server 2025 支持 Memory 和 CPU 限制
+            // 但不支持 PidsLimit（这是 Linux cgroups 特有功能）
+            _logger?.LogDebug("Windows container mode: PidsLimit is not supported");
+        }
+
+        CreateContainerResponse response = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
+        {
+            Name = containerName,
+            Image = _config.Image,
+            Tty = false,
+            AttachStdout = false,
+            AttachStderr = false,
+            Cmd = _config.GetKeepAliveCommand(),
+            WorkingDir = _config.WorkDir,
+            Labels = labels,
+            HostConfig = hostConfig
+        }, cancellationToken);
+
+        await _client.Containers.StartContainerAsync(response.ID, new ContainerStartParameters(), cancellationToken);
+
+        _logger?.LogInformation("Created and started container {ContainerId} (name: {Name}, memory: {Memory}MB, cpu: {Cpu}, pids: {Pids}, network: {Network})",
+            response.ID[..12], containerName,
+            limits.MemoryBytes / 1024 / 1024, limits.CpuCores, limits.MaxProcesses, network);
+
+        // 创建工作目录和 artifacts 目录
+        string mkdirCmd = _config.GetMkdirCommand(_config.WorkDir, $"{_config.WorkDir}/{_config.ArtifactsDir}");
+        await ExecuteCommandAsync(response.ID, mkdirCmd, "/", 30, cancellationToken);
+
+        return new ContainerInfo
+        {
+            ContainerId = response.ID,
+            Name = containerName,
+            Image = _config.Image,
+            DockerStatus = "running",
+            Status = SdkContainerStatus.Warming,
+            CreatedAt = DateTimeOffset.UtcNow,
+            StartedAt = DateTimeOffset.UtcNow,
+            Labels = labels
+        };
     }
 
     public async Task<List<ContainerInfo>> GetManagedContainersAsync(CancellationToken cancellationToken = default)

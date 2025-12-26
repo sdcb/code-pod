@@ -17,7 +17,6 @@ public class CodePodClientBuilder
     private Action<DbContextOptionsBuilder>? _dbContextOptionsAction;
     private bool _useInMemoryDatabase = false;
     private string? _inMemoryDatabaseName;
-    private bool _enableStateSync = false;
 
     /// <summary>
     /// 配置选项
@@ -61,7 +60,6 @@ public class CodePodClientBuilder
     /// 使用自定义数据库配置（例如 SQLite、SQL Server 等）
     /// </summary>
     /// <param name="optionsAction">DbContext 配置委托</param>
-    /// <param name="enableStateSync">是否启用 Docker 状态同步（持久化数据库建议启用）</param>
     /// <example>
     /// // 使用 SQLite
     /// builder.UseDatabase(options => options.UseSqlite("Data Source=codepod.db"), enableStateSync: true);
@@ -69,10 +67,9 @@ public class CodePodClientBuilder
     /// // 使用 SQL Server
     /// builder.UseDatabase(options => options.UseSqlServer(connectionString), enableStateSync: true);
     /// </example>
-    public CodePodClientBuilder UseDatabase(Action<DbContextOptionsBuilder> optionsAction, bool enableStateSync = true)
+    public CodePodClientBuilder UseDatabase(Action<DbContextOptionsBuilder> optionsAction)
     {
         _dbContextOptionsAction = optionsAction;
-        _enableStateSync = enableStateSync;
         return this;
     }
 
@@ -80,49 +77,38 @@ public class CodePodClientBuilder
     /// 使用自定义 DbContext 工厂（高级场景）
     /// </summary>
     /// <param name="factory">DbContext 工厂实例</param>
-    /// <param name="enableStateSync">是否启用 Docker 状态同步</param>
-    public CodePodClientBuilder WithDbContextFactory(IDbContextFactory<CodePodDbContext> factory, bool enableStateSync = true)
+    public CodePodClientBuilder WithDbContextFactory(IDbContextFactory<CodePodDbContext> factory)
     {
         _dbContextFactory = factory;
-        _enableStateSync = enableStateSync;
         return this;
     }
 
     /// <summary>
-    /// 构建 CodePodClient 实例
+    /// 构建并初始化 CodePodClient 实例
     /// </summary>
-    public CodePodClient Build()
+    public async Task<CodePodClient> BuildAsync(
+        bool syncInitialState = false,
+        bool preloadImages = false,
+        CancellationToken cancellationToken = default)
     {
         // 创建 DbContext 工厂
         IDbContextFactory<CodePodDbContext> dbContextFactory = CreateDbContextFactory();
 
         // 确保数据库已创建
-        using (CodePodDbContext context = dbContextFactory.CreateDbContext())
+        await using (CodePodDbContext context = await dbContextFactory.CreateDbContextAsync(cancellationToken))
         {
-            context.Database.EnsureCreated();
+            await context.Database.EnsureCreatedAsync(cancellationToken);
         }
 
         DockerService dockerService = new(
             _config,
             _loggerFactory?.CreateLogger<DockerService>());
 
-        // 创建状态同步服务（如果启用）
-        IDockerStateSyncService? stateSyncService = null;
-        if (_enableStateSync)
-        {
-            stateSyncService = new DockerStateSyncService(
-                dockerService,
-                dbContextFactory,
-                _config,
-                _loggerFactory?.CreateLogger<DockerStateSyncService>());
-        }
-
         DockerPoolService poolService = new(
             dockerService,
             dbContextFactory,
             _config,
-            _loggerFactory?.CreateLogger<DockerPoolService>(),
-            stateSyncService);
+            _loggerFactory?.CreateLogger<DockerPoolService>());
 
         SessionService sessionService = new(
             dbContextFactory,
@@ -136,13 +122,16 @@ public class CodePodClientBuilder
             _config,
             _loggerFactory?.CreateLogger<SessionCleanupService>());
 
-        return new CodePodClient(
+        CodePodClient client = new(
             dockerService,
             poolService,
             sessionService,
             cleanupService,
             dbContextFactory,
             _config);
+
+        await client.InitializeAsync(syncInitialState: syncInitialState, preloadImages: preloadImages, cancellationToken);
+        return client;
     }
 
     private IDbContextFactory<CodePodDbContext> CreateDbContextFactory()

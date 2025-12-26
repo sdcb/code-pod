@@ -17,6 +17,11 @@ public interface IDockerPoolService : IDisposable
     Task EnsurePrewarmAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 同步 Docker 实际状态到数据库
+    /// </summary>
+    Task SyncStateAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 获取一个可用容器（先预留，不绑定 SessionId；用于避免创建 Session 时产生占位记录）
     /// </summary>
     Task<ContainerInfo?> AcquireContainerAsync(ResourceLimits resourceLimits, NetworkMode networkMode, CancellationToken cancellationToken = default);
@@ -59,12 +64,10 @@ public class DockerPoolService : IDockerPoolService, IDisposable
 {
     private readonly IDockerService _dockerService;
     private readonly IDbContextFactory<CodePodDbContext> _contextFactory;
-    private readonly IDockerStateSyncService? _stateSyncService;
     private readonly CodePodConfig _config;
     private readonly ILogger<DockerPoolService>? _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly CancellationTokenSource _backgroundCts = new();
-    private bool _initialized = false;
     private bool _disposed = false;
 
     public event EventHandler? OnStatusChanged;
@@ -73,30 +76,17 @@ public class DockerPoolService : IDockerPoolService, IDisposable
         IDockerService dockerService,
         IDbContextFactory<CodePodDbContext> contextFactory,
         CodePodConfig config,
-        ILogger<DockerPoolService>? logger = null,
-        IDockerStateSyncService? stateSyncService = null)
+        ILogger<DockerPoolService>? logger = null)
     {
         _dockerService = dockerService;
         _contextFactory = contextFactory;
         _config = config;
         _logger = logger;
-        _stateSyncService = stateSyncService;
     }
 
     public async Task EnsurePrewarmAsync(CancellationToken cancellationToken = default)
     {
-        if (_initialized) return;
-
-        _logger?.LogInformation("Initializing Docker pool...");
-
-        // 确保镜像存在
-        await _dockerService.EnsureImageAsync(cancellationToken);
-
-        // 同步 Docker 状态到数据库（如果启用了状态同步服务）
-        if (_stateSyncService != null)
-        {
-            await _stateSyncService.SyncStateAsync(cancellationToken);
-        }
+        _logger?.LogInformation("Prewarming Docker containers...");
 
         // 计算需要预热的容器数量
         (int idle, int busy, int warming, int _) = await GetCountByStatusAsync(cancellationToken);
@@ -121,10 +111,190 @@ public class DockerPoolService : IDockerPoolService, IDisposable
             _logger?.LogInformation("No need to warm containers (current: {Idle} idle, {Busy} busy)", idle, busy);
         }
 
-        _initialized = true;
         int containerCount = await GetContainerCountAsync(cancellationToken);
-        _logger?.LogInformation("Docker pool initialization completed, {Count} containers ready", containerCount);
+        _logger?.LogInformation("Docker prewarm completed, {Count} containers in database", containerCount);
         NotifyStatusChanged();
+    }
+
+    public async Task SyncStateAsync(CancellationToken cancellationToken = default)
+    {
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            _logger?.LogInformation("Starting Docker state synchronization...");
+
+            List<ContainerInfo> dockerContainers = await _dockerService.GetManagedContainersAsync(cancellationToken);
+            HashSet<string> dockerContainerIds = dockerContainers.Select(c => c.ContainerId).ToHashSet();
+
+            List<ContainerEntity> dbContainers;
+            List<SessionEntity> dbSessions;
+            await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+            {
+                dbContainers = await context.Containers.ToListAsync(cancellationToken);
+                dbSessions = await context.Sessions.Where(s => s.Status != SessionStatus.Destroyed).ToListAsync(cancellationToken);
+            }
+
+            HashSet<string> busyContainerIds = dbSessions
+                .Where(s => s.Status == SessionStatus.Active && !string.IsNullOrEmpty(s.ContainerId))
+                .Select(s => s.ContainerId!)
+                .ToHashSet();
+
+            HashSet<string> dbContainerIds = dbContainers.Select(c => c.ContainerId).ToHashSet();
+
+            // 1. DB exists but Docker missing
+            List<string> deletedContainerIds = dbContainerIds.Except(dockerContainerIds).ToList();
+            foreach (string containerId in deletedContainerIds)
+            {
+                await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+                SessionEntity? session = await context.Sessions.FirstOrDefaultAsync(s => s.ContainerId == containerId, cancellationToken);
+                if (session != null && session.Status != SessionStatus.Destroyed)
+                {
+                    session.Status = SessionStatus.Destroyed;
+                }
+
+                ContainerEntity? container = await context.Containers.FindAsync([containerId], cancellationToken);
+                if (container != null)
+                {
+                    context.Containers.Remove(container);
+                }
+
+                await context.SaveChangesAsync(cancellationToken);
+            }
+
+            // 2. Docker exists but DB missing
+            List<string> newContainerIds = dockerContainerIds.Except(dbContainerIds).ToList();
+            foreach (string containerId in newContainerIds)
+            {
+                ContainerInfo dockerContainer = dockerContainers.First(c => c.ContainerId == containerId);
+                bool isRunning = dockerContainer.DockerStatus == "running";
+
+                if (isRunning)
+                {
+                    ContainerStatus status = busyContainerIds.Contains(containerId)
+                        ? ContainerStatus.Busy
+                        : ContainerStatus.Idle;
+
+                    await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+                    context.Containers.Add(ContainerEntity.FromModel(new ContainerInfo
+                    {
+                        ContainerId = dockerContainer.ContainerId,
+                        Name = dockerContainer.Name,
+                        Image = dockerContainer.Image,
+                        DockerStatus = dockerContainer.DockerStatus,
+                        Status = status,
+                        CreatedAt = dockerContainer.CreatedAt,
+                        StartedAt = dockerContainer.StartedAt,
+                        Labels = dockerContainer.Labels
+                    }));
+                    await context.SaveChangesAsync(cancellationToken);
+                }
+                else
+                {
+                    try
+                    {
+                        await _dockerService.DeleteContainerAsync(containerId, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to delete non-running container {ContainerId}", dockerContainer.ShortId);
+                    }
+                }
+            }
+
+            // 3. Update existing
+            List<string> existingContainerIds = dbContainerIds.Intersect(dockerContainerIds).ToList();
+            foreach (string containerId in existingContainerIds)
+            {
+                ContainerInfo dockerContainer = dockerContainers.First(c => c.ContainerId == containerId);
+                ContainerEntity dbContainer = dbContainers.First(c => c.ContainerId == containerId);
+                bool isRunning = dockerContainer.DockerStatus == "running";
+
+                if (!isRunning)
+                {
+                    await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+                    SessionEntity? session = await context.Sessions.FirstOrDefaultAsync(s => s.ContainerId == containerId && s.Status != SessionStatus.Destroyed, cancellationToken);
+                    if (session != null)
+                    {
+                        session.Status = SessionStatus.Destroyed;
+                    }
+
+                    ContainerEntity? container = await context.Containers.FindAsync([containerId], cancellationToken);
+                    if (container != null)
+                    {
+                        context.Containers.Remove(container);
+                    }
+                    await context.SaveChangesAsync(cancellationToken);
+
+                    try
+                    {
+                        await _dockerService.DeleteContainerAsync(containerId, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to delete stopped container {ContainerId}", dockerContainer.ShortId);
+                    }
+                }
+                else
+                {
+                    ContainerStatus expectedStatus = busyContainerIds.Contains(containerId)
+                        ? ContainerStatus.Busy
+                        : ContainerStatus.Idle;
+
+                    if (dbContainer.Status != expectedStatus || dbContainer.Status == ContainerStatus.Warming || dbContainer.Status == ContainerStatus.Destroying)
+                    {
+                        await using CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+                        ContainerEntity? container = await context.Containers.FindAsync([containerId], cancellationToken);
+                        if (container != null)
+                        {
+                            container.Status = expectedStatus;
+                            await context.SaveChangesAsync(cancellationToken);
+                        }
+                    }
+                }
+            }
+
+            // 4. Remove orphaned warming/destroying
+            await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+            {
+                List<ContainerEntity> orphanedContainers = await context.Containers
+                    .Where(c => (c.Status == ContainerStatus.Destroying || c.Status == ContainerStatus.Warming) &&
+                               !dockerContainerIds.Contains(c.ContainerId))
+                    .ToListAsync(cancellationToken);
+
+                foreach (ContainerEntity container in orphanedContainers)
+                {
+                    context.Containers.Remove(container);
+                }
+
+                await context.SaveChangesAsync(cancellationToken);
+            }
+
+            // 5. Mark orphaned sessions
+            await using (CodePodDbContext context = await _contextFactory.CreateDbContextAsync(cancellationToken))
+            {
+                List<SessionEntity> orphanedSessions = await context.Sessions
+                    .Where(s => s.Status != SessionStatus.Destroyed &&
+                               s.ContainerId != null &&
+                               !dockerContainerIds.Contains(s.ContainerId))
+                    .ToListAsync(cancellationToken);
+
+                foreach (SessionEntity session in orphanedSessions)
+                {
+                    session.Status = SessionStatus.Destroyed;
+                }
+
+                await context.SaveChangesAsync(cancellationToken);
+            }
+
+            _logger?.LogInformation("Docker state synchronization completed");
+            NotifyStatusChanged();
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task<ContainerInfo?> AcquireContainerAsync(ResourceLimits resourceLimits, NetworkMode networkMode, CancellationToken cancellationToken = default)

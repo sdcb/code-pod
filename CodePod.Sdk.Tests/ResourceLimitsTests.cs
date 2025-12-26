@@ -1,46 +1,54 @@
 using CodePod.Sdk.Models;
 using CodePod.Sdk.Tests.TestInfrastructure;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace CodePod.Sdk.Tests;
 
 /// <summary>
-/// 资源限制功能测试
+/// 资源限制功能测试基类
 /// 验证内存限制、CPU 限制、进程数限制
 /// </summary>
-[Collection(ResourceLimitsCollection.Name)]
-public class ResourceLimitsTests
+public abstract class ResourceLimitsTestBase
 {
-    private readonly ITestOutputHelper _output;
-    private readonly ResourceLimitsCodePodFixture _fixture;
+    protected virtual string GetLabelPrefix() => $"codepod-test-{GetType().Name.ToLowerInvariant()}";
 
-    private CodePodClient Client => _fixture.Client;
-    private bool IsWindowsContainer => _fixture.IsWindowsContainer;
-
-    public ResourceLimitsTests(ResourceLimitsCodePodFixture fixture, ITestOutputHelper output)
+    protected Task<TestClientContext> CreateContextAsync()
     {
-        _fixture = fixture;
-        _output = output;
+        return TestClientContext.CreateAsync(config =>
+        {
+            config.PrewarmCount = 0;
+            config.LabelPrefix = GetLabelPrefix();
+        });
     }
+}
 
+public class ResourceLimits_DefaultTest : ResourceLimitsTestBase
+{
     [Fact]
+    [Trait("Category", "ResourceLimits")]
     public async Task CreateSession_WithDefaultLimits_Succeeds()
     {
-        await using TestSessionTracker sessions = new(Client);
+        await using TestClientContext context = await CreateContextAsync();
+        await using TestSessionTracker sessions = new(context.Client);
+
         // Act
         SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "默认限制测试" });
 
         // Assert
         Assert.NotNull(session);
         Assert.NotEmpty(session.ContainerId);
-        _output.WriteLine($"Session created with container: {session.ContainerId}");
     }
+}
 
+public class ResourceLimits_CustomTest : ResourceLimitsTestBase
+{
     [Fact]
+    [Trait("Category", "ResourceLimits")]
     public async Task CreateSession_WithCustomLimits_Succeeds()
     {
-        await using TestSessionTracker sessions = new(Client);
+        await using TestClientContext context = await CreateContextAsync();
+        await using TestSessionTracker sessions = new(context.Client);
+
         // Arrange
         SessionOptions options = new()
         {
@@ -59,13 +67,18 @@ public class ResourceLimitsTests
         // Assert
         Assert.NotNull(session);
         Assert.NotEmpty(session.ContainerId);
-        _output.WriteLine($"Session created with custom limits, container: {session.ContainerId}");
     }
+}
 
+public class ResourceLimits_MinimalTest : ResourceLimitsTestBase
+{
     [Fact]
+    [Trait("Category", "ResourceLimits")]
     public async Task CreateSession_WithMinimalLimits_Succeeds()
     {
-        await using TestSessionTracker sessions = new(Client);
+        await using TestClientContext context = await CreateContextAsync();
+        await using TestSessionTracker sessions = new(context.Client);
+
         // Arrange
         SessionOptions options = new()
         {
@@ -78,12 +91,17 @@ public class ResourceLimitsTests
 
         // Assert
         Assert.NotNull(session);
-        _output.WriteLine($"Session created with minimal limits (128MB, 0.25 CPU)");
     }
+}
 
+public class ResourceLimits_ExceedTest : ResourceLimitsTestBase
+{
     [Fact]
+    [Trait("Category", "ResourceLimits")]
     public async Task CreateSession_ExceedingMaxLimits_ThrowsException()
     {
+        await using TestClientContext context = await CreateContextAsync();
+
         // Arrange
         SessionOptions options = new()
         {
@@ -98,16 +116,21 @@ public class ResourceLimitsTests
 
         // Act & Assert
         ArgumentException ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => Client.CreateSessionAsync(options));
+            () => context.Client.CreateSessionAsync(options));
         
         Assert.Contains("memory", ex.Message.ToLower());
-        _output.WriteLine($"Expected exception: {ex.Message}");
     }
+}
 
+public class ResourceLimits_MemoryEnforcementTest : ResourceLimitsTestBase
+{
     [Fact]
+    [Trait("Category", "ResourceLimits")]
     public async Task MemoryLimit_EnforcedByDocker()
     {
-        await using TestSessionTracker sessions = new(Client);
+        await using TestClientContext context = await CreateContextAsync();
+        await using TestSessionTracker sessions = new(context.Client);
+
         // Arrange - 使用较小的内存限制
         SessionOptions options = new()
         {
@@ -122,26 +145,26 @@ public class ResourceLimitsTests
 
         SessionInfo session = await sessions.CreateSessionAsync(options);
 
-        // Act - 尝试分配超过限制的内存（这可能会失败或被 OOM killer 杀死）
-        // 使用 dotnet 分配内存
-        CommandResult result = await Client.ExecuteCommandAsync(
+        // Act - 尝试分配超过限制的内存
+        CommandResult result = await context.Client.ExecuteCommandAsync(
             session.Id,
             "dotnet --version && echo 'Memory limit test passed'",
             timeoutSeconds: 30);
 
         // Assert - 命令应该能执行（只要不超内存）
-        _output.WriteLine($"Exit code: {result.ExitCode}");
-        _output.WriteLine($"Stdout: {result.Stdout}");
-        _output.WriteLine($"Stderr: {result.Stderr}");
-        
-        // 只要命令能执行就算通过，具体内存限制测试需要更复杂的场景
         Assert.True(true);
     }
+}
 
+public class ResourceLimits_PidsEnforcementTest : ResourceLimitsTestBase
+{
     [Fact]
+    [Trait("Category", "ResourceLimits")]
     public async Task PidsLimit_EnforcedByDocker()
     {
-        await using TestSessionTracker sessions = new(Client);
+        await using TestClientContext context = await CreateContextAsync();
+        await using TestSessionTracker sessions = new(context.Client);
+
         // Arrange - 使用较小的进程数限制
         SessionOptions options = new()
         {
@@ -156,22 +179,22 @@ public class ResourceLimitsTests
 
         SessionInfo session = await sessions.CreateSessionAsync(options);
 
-        // Act - 尝试创建多个子进程（可能会达到限制）
-        string command = IsWindowsContainer
+        // Act - 尝试创建多个子进程
+        string command = context.IsWindowsContainer
             ? "1..5 | ForEach-Object { Write-Output $_ }"
             : "for i in $(seq 1 5); do echo $i; done";
 
-        CommandResult result = await Client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
+        CommandResult result = await context.Client.ExecuteCommandAsync(session.Id, command, timeoutSeconds: 30);
 
-        // Assert
-        _output.WriteLine($"Exit code: {result.ExitCode}");
-        _output.WriteLine($"Stdout: {result.Stdout}");
-        
-        // 简单的 for 循环应该能执行成功
+        // Assert - 简单的 for 循环应该能执行成功
         Assert.Equal(0, result.ExitCode);
     }
+}
 
+public class ResourceLimits_PresetsTest : ResourceLimitsTestBase
+{
     [Fact]
+    [Trait("Category", "ResourceLimits")]
     public async Task ResourceLimits_Presets_HaveValidValues()
     {
         // Assert - 验证预设值合理
@@ -181,10 +204,5 @@ public class ResourceLimitsTests
 
         Assert.True(ResourceLimits.Standard.MemoryBytes > ResourceLimits.Minimal.MemoryBytes);
         Assert.True(ResourceLimits.Large.MemoryBytes > ResourceLimits.Standard.MemoryBytes);
-
-        _output.WriteLine($"Minimal: {ResourceLimits.Minimal.MemoryBytes / 1024 / 1024}MB, {ResourceLimits.Minimal.CpuCores} CPU");
-        _output.WriteLine($"Standard: {ResourceLimits.Standard.MemoryBytes / 1024 / 1024}MB, {ResourceLimits.Standard.CpuCores} CPU");
-        _output.WriteLine($"Large: {ResourceLimits.Large.MemoryBytes / 1024 / 1024}MB, {ResourceLimits.Large.CpuCores} CPU");
     }
-
 }

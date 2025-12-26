@@ -6,84 +6,88 @@ using Xunit;
 namespace CodePod.Sdk.Tests;
 
 /// <summary>
-/// 性能测试 - 对应 test/PerformanceTest.cs
+/// 性能测试基类
 /// </summary>
-[Collection(CodePodCollection.Name)]
-public class PerformanceTests
+public abstract class PerformanceTestBase
 {
-    private readonly CodePodFixture _fixture;
+    protected virtual string GetLabelPrefix() => $"codepod-test-{GetType().Name.ToLowerInvariant()}";
 
-    private CodePodClient Client => _fixture.Client;
-    private string WorkDir => _fixture.WorkDir;
-
-    public PerformanceTests(CodePodFixture fixture)
+    protected Task<TestClientContext> CreateContextAsync()
     {
-        _fixture = fixture;
+        return TestClientContext.CreateAsync(config =>
+        {
+            config.LabelPrefix = GetLabelPrefix();
+        });
     }
+}
 
-    private const int TestRounds = 3;
-
+public class Performance_SessionCreationTest : PerformanceTestBase
+{
     [Fact]
+    [Trait("Category", "Performance")]
     public async Task SessionCreation_Performance()
     {
-        await using TestSessionTracker sessions = new(Client);
+        await using TestClientContext context = await CreateContextAsync();
+        await using TestSessionTracker sessions = new(context.Client);
+
+        const int TestRounds = 3;
         List<double> sessionCreateTimes = new();
 
         for (int round = 1; round <= TestRounds; round++)
         {
             Stopwatch sw = Stopwatch.StartNew();
-
-            // 创建会话
             SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = $"性能测试-{round}" });
-
             sw.Stop();
             sessionCreateTimes.Add(sw.Elapsed.TotalMilliseconds);
         }
 
-        // 计算统计
-        double avgCreateTime = sessionCreateTimes.Average();
-        double minCreateTime = sessionCreateTimes.Min();
-        double maxCreateTime = sessionCreateTimes.Max();
-
         // Assert - 会话创建时间应在合理范围内
+        double avgCreateTime = sessionCreateTimes.Average();
         Assert.True(avgCreateTime < 30000, $"Average session creation time ({avgCreateTime}ms) should be under 30 seconds");
     }
+}
 
+public class Performance_CommandExecutionTest : PerformanceTestBase
+{
     [Fact]
+    [Trait("Category", "Performance")]
     public async Task CommandExecution_Performance()
     {
-        await using TestSessionTracker sessions = new(Client);
+        await using TestClientContext context = await CreateContextAsync();
+        await using TestSessionTracker sessions = new(context.Client);
+
         // Arrange
         SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = "命令性能测试" });
-
         List<double> commandExecTimes = new();
-
 
         for (int i = 0; i < 5; i++)
         {
             Stopwatch sw = Stopwatch.StartNew();
-
-            CommandResult result = await Client.ExecuteCommandAsync(
+            CommandResult result = await context.Client.ExecuteCommandAsync(
                 session.Id,
                 "echo 'Performance test'");
-            
             sw.Stop();
             commandExecTimes.Add(sw.Elapsed.TotalMilliseconds);
 
             Assert.Equal(0, result.ExitCode);
         }
 
-        // 统计
-        double avgExecTime = commandExecTimes.Average();
-        
         // Assert - 命令执行时间应在合理范围内
+        double avgExecTime = commandExecTimes.Average();
         Assert.True(avgExecTime < 5000, $"Average command execution time ({avgExecTime}ms) should be under 5 seconds");
     }
+}
 
+public class Performance_FullWorkflowTest : PerformanceTestBase
+{
     [Fact]
+    [Trait("Category", "Performance")]
     public async Task FullWorkflow_Performance()
     {
-        await using TestSessionTracker sessions = new(Client);
+        await using TestClientContext context = await CreateContextAsync();
+        await using TestSessionTracker sessions = new(context.Client);
+
+        const int TestRounds = 3;
         List<double> totalTimes = new();
 
         for (int round = 1; round <= TestRounds; round++)
@@ -94,40 +98,38 @@ public class PerformanceTests
             SessionInfo session = await sessions.CreateSessionAsync(new SessionOptions { Name = $"完整流程-{round}" });
 
             // 2. 执行一个简单命令
-            CommandResult result = await Client.ExecuteCommandAsync(
+            CommandResult result = await context.Client.ExecuteCommandAsync(
                 session.Id,
                 "echo 'Hello World!'");
             Assert.Equal(0, result.ExitCode);
 
             // 3. 上传一个文件
-            string filePath = _fixture.GetWorkPath("perf-test.txt");
-            await Client.UploadFileAsync(
+            string filePath = context.GetWorkPath("perf-test.txt");
+            await context.Client.UploadFileAsync(
                 session.Id,
                 filePath,
                 "Performance test content"u8.ToArray());
 
             // 4. 列出目录
-            List<FileEntry> files = await Client.ListDirectoryAsync(session.Id, WorkDir);
+            List<FileEntry> files = await context.Client.ListDirectoryAsync(session.Id, context.WorkDir);
             Assert.Contains(files, f => f.Name == "perf-test.txt");
 
             // 5. 下载文件
-            byte[] downloaded = await Client.DownloadFileAsync(session.Id, filePath);
+            byte[] downloaded = await context.Client.DownloadFileAsync(session.Id, filePath);
             Assert.NotEmpty(downloaded);
 
             // 6. 删除文件
-            await Client.DeleteFileAsync(session.Id, filePath);
+            await context.Client.DeleteFileAsync(session.Id, filePath);
 
             // 7. 销毁会话
-            await Client.DestroySessionAsync(session.Id);
+            await context.Client.DestroySessionAsync(session.Id);
 
             totalSw.Stop();
             totalTimes.Add(totalSw.Elapsed.TotalMilliseconds);
         }
 
-        // 统计
-        double avgTotalTime = totalTimes.Average();
-        
         // Assert
+        double avgTotalTime = totalTimes.Average();
         Assert.True(avgTotalTime < 60000, $"Average full workflow time ({avgTotalTime}ms) should be under 60 seconds");
     }
 }

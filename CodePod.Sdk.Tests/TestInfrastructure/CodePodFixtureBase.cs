@@ -27,12 +27,10 @@ public abstract class CodePodFixtureBase : IAsyncLifetime
         CodePodTestSettings settings = TestSettings.Load();
         Config = CreateConfig(settings);
 
-        Client = new CodePodClientBuilder()
+        Client = await new CodePodClientBuilder()
             .WithConfig(Config)
             .WithLogging(LoggerFactory)
-            .Build();
-
-        await Client.InitializeAsync();
+            .BuildAsync(syncInitialState: false, preloadImages: false);
     }
 
     public virtual async Task DisposeAsync()
