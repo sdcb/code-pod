@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace CodePod.Sdk.Tests;
+namespace CodePod.Sdk.Tests.TestInfrastructure;
 
 public sealed class CodePodTestSettings
 {
