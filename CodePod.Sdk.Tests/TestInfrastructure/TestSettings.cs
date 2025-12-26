@@ -4,6 +4,12 @@ namespace CodePod.Sdk.Tests.TestInfrastructure;
 
 public sealed class CodePodTestSettings
 {
+    /// <summary>
+    /// 是否使用 Mock Docker 服务（用于单元测试，不连接真实 Docker）。
+    /// 设置为 true 进行快速单元测试，设置为 false 进行真实集成测试。
+    /// </summary>
+    public bool UseMockDocker { get; set; } = true;
+
     public string DockerEndpoint { get; set; } = "unix:///var/run/docker.sock";
 
     public bool IsWindowsContainer { get; set; } = false;

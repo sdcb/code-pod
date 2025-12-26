@@ -17,6 +17,7 @@ public class CodePodClientBuilder
     private Action<DbContextOptionsBuilder>? _dbContextOptionsAction;
     private bool _useInMemoryDatabase = false;
     private string? _inMemoryDatabaseName;
+    private IDockerService? _dockerService;
 
     /// <summary>
     /// 配置选项
@@ -42,6 +43,15 @@ public class CodePodClientBuilder
     public CodePodClientBuilder WithLogging(ILoggerFactory loggerFactory)
     {
         _loggerFactory = loggerFactory;
+        return this;
+    }
+
+    /// <summary>
+    /// 使用自定义 IDockerService 实现（用于测试）
+    /// </summary>
+    public CodePodClientBuilder WithDockerService(IDockerService dockerService)
+    {
+        _dockerService = dockerService;
         return this;
     }
 
@@ -100,9 +110,18 @@ public class CodePodClientBuilder
             await context.Database.EnsureCreatedAsync(cancellationToken);
         }
 
-        DockerService dockerService = new(
-            _config,
-            _loggerFactory?.CreateLogger<DockerService>());
+        // 创建或使用提供的 DockerService
+        IDockerService dockerService;
+        if (_dockerService != null)
+        {
+            dockerService = _dockerService;
+        }
+        else
+        {
+            dockerService = new DockerService(
+                _config,
+                _loggerFactory?.CreateLogger<DockerService>());
+        }
 
         DockerPoolService poolService = new(
             dockerService,

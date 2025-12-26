@@ -9,14 +9,20 @@ public sealed class TestClientContext : IAsyncDisposable
     public CodePodConfig Config { get; }
     public ILoggerFactory LoggerFactory { get; }
 
+    /// <summary>
+    /// 是否使用 Mock Docker（用于区分单元测试和集成测试）
+    /// </summary>
+    public bool UseMockDocker { get; }
+
     public bool IsWindowsContainer => Config.IsWindowsContainer;
     public string WorkDir => Config.WorkDir;
 
-    private TestClientContext(CodePodClient client, CodePodConfig config, ILoggerFactory loggerFactory)
+    private TestClientContext(CodePodClient client, CodePodConfig config, ILoggerFactory loggerFactory, bool useMockDocker)
     {
         Client = client;
         Config = config;
         LoggerFactory = loggerFactory;
+        UseMockDocker = useMockDocker;
     }
 
     public static async Task<TestClientContext> CreateAsync(
@@ -39,13 +45,20 @@ public sealed class TestClientContext : IAsyncDisposable
 
         configure?.Invoke(config);
 
-        CodePodClient client = await new CodePodClientBuilder()
+        CodePodClientBuilder builder = new CodePodClientBuilder()
             .WithConfig(config)
             .WithLogging(loggerFactory)
-            .UseInMemoryDatabase()
-            .BuildAsync(syncInitialState: false, preloadImages: false, cancellationToken);
+            .UseInMemoryDatabase();
 
-        return new TestClientContext(client, config, loggerFactory);
+        // 根据配置决定是否使用 Mock Docker
+        if (settings.UseMockDocker)
+        {
+            builder.WithDockerService(new MockDockerService(config));
+        }
+
+        CodePodClient client = await builder.BuildAsync(syncInitialState: false, preloadImages: false, cancellationToken);
+
+        return new TestClientContext(client, config, loggerFactory, settings.UseMockDocker);
     }
 
     public async ValueTask DisposeAsync()
