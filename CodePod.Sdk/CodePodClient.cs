@@ -341,14 +341,6 @@ public class CodePodClient : IDisposable
         await _poolService.DeleteAllContainersAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// 触发预热
-    /// </summary>
-    public async Task TriggerPrewarmAsync(CancellationToken cancellationToken = default)
-    {
-        await _poolService.EnsurePrewarmAsync(cancellationToken);
-    }
-
     #endregion
 
     #region Usage and Metrics
